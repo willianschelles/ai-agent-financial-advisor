@@ -25,4 +25,8 @@ defmodule AiAgent.Accounts do
         |> Repo.update()
     end
   end
+
+  def get_user!(id) do
+    Repo.get!(User, id)
+  end
 end

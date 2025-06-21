@@ -1,5 +1,5 @@
 defmodule AiAgentWeb.LoginHTML do
   use AiAgentWeb, :html
 
-  embed_templates "templates/login/*"
+  embed_templates("../templates/login/*")
 end

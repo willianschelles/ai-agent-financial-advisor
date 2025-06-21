@@ -27,6 +27,7 @@ defmodule AiAgentWeb.Router do
     live("/chat", ChatLive)
   end
 
+  # /auth/google or /auth/hubspot
   scope "/auth", AiAgentWeb do
     pipe_through(:browser)
 
