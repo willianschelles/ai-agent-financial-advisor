@@ -18,6 +18,13 @@ defmodule AiAgentWeb.Router do
     pipe_through(:browser)
 
     get("/", PageController, :home)
+    get("/login", LoginController, :index)
+  end
+
+  scope "/", AiAgentWeb do
+    pipe_through([:browser, :browser_auth])
+
+    live("/chat", ChatLive)
   end
 
   scope "/auth", AiAgentWeb do
@@ -25,6 +32,11 @@ defmodule AiAgentWeb.Router do
 
     get("/:provider", AuthController, :request)
     get("/:provider/callback", AuthController, :callback)
+  end
+
+  pipeline :browser_auth do
+    plug(:fetch_session)
+    plug(AiAgentWeb.Plugs.Auth)
   end
 
   # Other scopes may use custom stacks.

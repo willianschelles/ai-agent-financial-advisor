@@ -1,6 +1,6 @@
 defmodule AiAgent.Accounts do
   alias AiAgent.Repo
-  alias AiAgent.Schemas.User
+  alias AiAgent.User
 
   def upsert_user_from_auth(%Ueberauth.Auth{info: info, credentials: creds}) do
     email = info.email
