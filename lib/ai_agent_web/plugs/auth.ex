@@ -5,8 +5,6 @@ defmodule AiAgentWeb.Plugs.Auth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    IO.inspect(get_session(conn, :user_id), label: "[Auth Plug] User ID in session")
-
     case get_session(conn, :user_id) do
       nil ->
         conn

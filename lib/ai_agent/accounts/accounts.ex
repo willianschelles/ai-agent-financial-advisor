@@ -27,10 +27,15 @@ defmodule AiAgent.Accounts do
   end
 
   def connect_hubspot(user, %Ueberauth.Auth{credentials: creds}) do
+    IO.inspect(creds, label: "HubSpot Credentials")
+    IO.inspect(creds.token, label: "HubSpot Access Token")
+    token = Jason.decode!(creds.token)
+    IO.inspect(token, label: "Decoded HubSpot Access Token")
     tokens = %{
-      access_token: creds.token,
-      refresh_token: creds.refresh_token,
-      expires_at: creds.expires_at
+      access_token: token["access_token"],
+      token_type: token["token_type"],
+      refresh_token: token["refresh_token"],
+      expires_in: token["expires_in"]
     }
 
     user
