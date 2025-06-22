@@ -31,9 +31,10 @@ defmodule AiAgent.Embeddings.DataIngestion do
 
     with {:ok, access_token} <- get_google_access_token(user),
          {:ok, messages} <- fetch_gmail_messages(access_token, limit, query) do
-          IO.inspect(messages, label: "Fetched Gmail Messages")
+      IO.inspect(messages, label: "Fetched Gmail Messages")
       # Convert messages to document format
       limited_messages = Enum.take(messages, 3)
+
       documents =
         limited_messages
         |> Enum.map(&gmail_message_to_document/1)
@@ -255,18 +256,24 @@ defmodule AiAgent.Embeddings.DataIngestion do
 
     # Extract body text
     body = extract_message_body(message["payload"])
-    Logger.debug("Extracted body for message #{inspect(message["id"])}: #{String.slice(body, 0, 100)}...")
+
+    Logger.debug(
+      "Extracted body for message #{inspect(message["id"])}: #{String.slice(body, 0, 100)}..."
+    )
 
     # Create content combining subject and body
     content = "Subject: #{subject}\n\n#{body}"
 
-    Logger.debug("Final document content for message #{inspect(message["id"])}: #{String.slice(content, 0, 100)}...")
+    Logger.debug(
+      "Final document content for message #{inspect(message["id"])}: #{String.slice(content, 0, 100)}..."
+    )
 
     %{
       content: content,
       source: from,
       type: "email"
     }
+
     # Extract relevant fields from Gmail API response
     headers = get_in(message, ["payload", "headers"]) || []
     subject = get_header_value(headers, "Subject") || "No Subject"
@@ -328,26 +335,35 @@ defmodule AiAgent.Embeddings.DataIngestion do
 
   # Private functions for HubSpot integration
 
-  defp get_hubspot_access_token(%User{hubspot_tokens: nil}), do: {:error, "No HubSpot tokens - user needs to authenticate with HubSpot"}
+  defp get_hubspot_access_token(%User{hubspot_tokens: nil}),
+    do: {:error, "No HubSpot tokens - user needs to authenticate with HubSpot"}
 
   defp get_hubspot_access_token(%User{hubspot_tokens: tokens}) when is_map(tokens) do
     case tokens["access_token"] || tokens[:access_token] do
       nil ->
-        Logger.error("HubSpot token map missing access_token. Available keys: #{inspect(Map.keys(tokens))}")
+        Logger.error(
+          "HubSpot token map missing access_token. Available keys: #{inspect(Map.keys(tokens))}"
+        )
+
         {:error, "No HubSpot access token in stored map"}
+
       token when is_binary(token) ->
         # Check if token appears to be expired (if we have expiry info)
         case tokens["expires_at"] || tokens[:expires_at] do
           expires_at when is_integer(expires_at) ->
             current_time = System.system_time(:second)
+
             if expires_at < current_time do
-              {:error, "HubSpot token appears to be expired (expires_at: #{expires_at}, current: #{current_time})"}
+              {:error,
+               "HubSpot token appears to be expired (expires_at: #{expires_at}, current: #{current_time})"}
             else
               {:ok, token}
             end
+
           _ ->
             {:ok, token}
         end
+
       _ ->
         {:error, "HubSpot access token is not a string"}
     end
@@ -388,12 +404,14 @@ defmodule AiAgent.Embeddings.DataIngestion do
         Logger.error("HubSpot authentication failed (401). Token may be invalid or expired.")
         Logger.error("Response body: #{inspect(body)}")
 
-        error_msg = case body do
-          %{"message" => message} -> message
-          _ -> "Authentication failed"
-        end
+        error_msg =
+          case body do
+            %{"message" => message} -> message
+            _ -> "Authentication failed"
+          end
 
-        {:error, "HubSpot authentication failed: #{error_msg}. Please re-authenticate with HubSpot."}
+        {:error,
+         "HubSpot authentication failed: #{error_msg}. Please re-authenticate with HubSpot."}
 
       {:ok, %{status: 403, body: body}} ->
         Logger.error("HubSpot access forbidden (403). Check scopes and permissions.")

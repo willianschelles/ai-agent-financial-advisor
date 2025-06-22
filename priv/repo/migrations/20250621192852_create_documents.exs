@@ -9,7 +9,6 @@ defmodule AiAgent.Repo.Migrations.CreateDocuments do
       add :user_id, references(:users, on_delete: :nothing)
       add :embedding, :vector, size: 1536
 
-
       timestamps(type: :utc_datetime)
     end
 

@@ -111,10 +111,12 @@ defmodule AiAgent.Embeddings.VectorStore do
   - {:ok, [documents_with_similarity]} on success
   - {:error, reason} on failure
   """
+  # cosine similarity in pgvector is calculated as 1 - (a <=> b)
   def find_similar_documents(user, query_text, opts \\ %{}) do
     user_id = get_user_id(user)
     limit = Map.get(opts, :limit, 10)
-    threshold = Map.get(opts, :threshold, 0.3)  # Lowered from 0.7 to 0.3 for better recall
+    # Lowered from 0.7 to 0.3 for better recall
+    threshold = Map.get(opts, :threshold, 0.3)
     types = Map.get(opts, :types, [])
     sources = Map.get(opts, :sources, [])
 

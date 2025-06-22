@@ -22,7 +22,6 @@ defmodule AiAgentWeb.Router do
     get("/", PageController, :home)
     get("/login", LoginController, :index)
     delete("/logout", AuthController, :logout)
-
   end
 
   scope "/", AiAgentWeb do

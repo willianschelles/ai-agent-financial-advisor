@@ -37,6 +37,7 @@ defmodule AiAgent.Embeddings.RAG do
 
         Please use this context to help answer the user's question. If the context doesn't contain relevant information, please indicate that.
         """
+
         {:ok, formatted_context}
 
       {:error, reason} ->
@@ -138,7 +139,8 @@ defmodule AiAgent.Embeddings.RAG do
         # Format the results to highlight the most relevant information
         formatted_results =
           documents
-          |> Enum.take(5)  # Take top 5 results
+          # Take top 5 results
+          |> Enum.take(5)
           |> Enum.map(fn doc ->
             """
             FROM: #{doc.source} (#{doc.type})

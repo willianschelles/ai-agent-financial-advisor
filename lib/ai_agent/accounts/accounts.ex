@@ -31,6 +31,7 @@ defmodule AiAgent.Accounts do
     IO.inspect(creds.token, label: "HubSpot Access Token")
     token = Jason.decode!(creds.token)
     IO.inspect(token, label: "Decoded HubSpot Access Token")
+
     tokens = %{
       access_token: token["access_token"],
       token_type: token["token_type"],

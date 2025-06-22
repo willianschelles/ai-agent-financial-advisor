@@ -36,7 +36,7 @@ defmodule AiAgent.Embeddings do
 
         # Truncate text if it's too long
         cleaned_text = text |> String.trim() |> truncate_text()
-        
+
         payload = %{
           model: @embedding_model,
           input: cleaned_text,
@@ -72,6 +72,7 @@ defmodule AiAgent.Embeddings do
   """
   def embed_texts(texts) when is_list(texts) do
     Logger.info("Embedding batch of #{length(texts)} texts")
+
     case get_openai_key() do
       nil ->
         Logger.error("OpenAI API key not configured")
@@ -105,6 +106,7 @@ defmodule AiAgent.Embeddings do
           Logger.debug("Sending batch embedding request to OpenAI")
 
           start_time = System.monotonic_time()
+
           result =
             case Req.post(@openai_embeddings_url, headers: headers, json: payload) do
               {:ok, %{status: 200, body: %{"data" => embeddings}}} ->
@@ -120,7 +122,10 @@ defmodule AiAgent.Embeddings do
                 Logger.error("Failed to call OpenAI API: #{inspect(reason)}")
                 {:error, "Network error: #{inspect(reason)}"}
             end
-          elapsed_ms = System.convert_time_unit(System.monotonic_time() - start_time, :native, :millisecond)
+
+          elapsed_ms =
+            System.convert_time_unit(System.monotonic_time() - start_time, :native, :millisecond)
+
           Logger.info("Embedding batch request took #{elapsed_ms} ms")
           result
         end
@@ -173,17 +178,21 @@ defmodule AiAgent.Embeddings do
     else
       # Truncate and add indication
       truncated = String.slice(text, 0, @max_text_length - 100)
-      
+
       # Try to cut at a word boundary
-      truncated = case String.split(truncated, " ") do
-        words when length(words) > 1 ->
-          words |> Enum.drop(-1) |> Enum.join(" ")
-        _ ->
-          truncated
-      end
-      
-      Logger.warning("Text truncated from #{String.length(text)} to #{String.length(truncated)} characters")
-      
+      truncated =
+        case String.split(truncated, " ") do
+          words when length(words) > 1 ->
+            words |> Enum.drop(-1) |> Enum.join(" ")
+
+          _ ->
+            truncated
+        end
+
+      Logger.warning(
+        "Text truncated from #{String.length(text)} to #{String.length(truncated)} characters"
+      )
+
       truncated <> "... [TEXT TRUNCATED - Original length: #{String.length(text)} chars]"
     end
   end
