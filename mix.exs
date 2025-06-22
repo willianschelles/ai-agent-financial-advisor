@@ -66,7 +66,7 @@ defmodule AiAgent.MixProject do
       # auth
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.10"},
-
+      {:oauth2, "~> 2.1"},
     ]
   end
 

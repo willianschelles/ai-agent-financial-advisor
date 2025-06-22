@@ -76,12 +76,34 @@ config :ueberauth, Ueberauth,
         default_scope:
           "email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.events"
       ]
+    },
+    hubspot: {
+      HubspotAuth.HubspotStrategy,
+      [
+        oauth2_module: HubspotAuth.HubspotOAuth
+        # Add any other strategy options here
+      ]
+      # [
+      #   client_id: System.get_env("HUBSPOT_CLIENT_ID"),
+      #   client_secret: System.get_env("HUBSPOT_CLIENT_SECRET"),
+      #   redirect_uri:
+      #     System.get_env("HUBSPOT_REDIRECT_URI") || "http://localhost:4000/auth/hubspot/callback",
+      #   default_scope: "oauth crm.objects.contacts.read crm.objects.contacts.write"
+      # ]
     }
   ]
 
 config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+
+config :ueberauth, HubspotAuth.HubspotOAuth,
+  client_id: System.get_env("HUBSPOT_CLIENT_ID"),
+  client_secret: System.get_env("HUBSPOT_CLIENT_SECRET"),
+  redirect_uri: "http://localhost:4000/auth/hubspot/callback",
+  site: "https://api.hubapi.com",
+  authorize_url: "https://app.hubspot.com/oauth/authorize",
+  token_url: "https://api.hubapi.com/oauth/v1/token"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

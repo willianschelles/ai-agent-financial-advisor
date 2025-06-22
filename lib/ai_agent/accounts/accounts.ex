@@ -26,6 +26,18 @@ defmodule AiAgent.Accounts do
     end
   end
 
+  def connect_hubspot(user, %Ueberauth.Auth{credentials: creds}) do
+    tokens = %{
+      access_token: creds.token,
+      refresh_token: creds.refresh_token,
+      expires_at: creds.expires_at
+    }
+
+    user
+    |> User.changeset(%{hubspot_tokens: tokens})
+    |> Repo.update()
+  end
+
   def get_user!(id) do
     Repo.get!(User, id)
   end

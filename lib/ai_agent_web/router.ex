@@ -5,6 +5,8 @@ defmodule AiAgentWeb.Router do
     plug(:accepts, ["html"])
     plug(:fetch_session)
     plug(:fetch_live_flash)
+    plug(:fetch_flash)
+
     plug(:put_root_layout, html: {AiAgentWeb.Layouts, :root})
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
@@ -29,7 +31,7 @@ defmodule AiAgentWeb.Router do
 
   # /auth/google or /auth/hubspot
   scope "/auth", AiAgentWeb do
-    pipe_through(:browser)
+    pipe_through([:browser, :browser_auth])
 
     get("/:provider", AuthController, :request)
     get("/:provider/callback", AuthController, :callback)
