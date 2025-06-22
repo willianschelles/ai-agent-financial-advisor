@@ -16,7 +16,7 @@ defmodule AiAgent.Document do
   @doc false
   def changeset(document, attrs) do
     document
-    |> cast(attrs, [:type, :source, :content])
-    |> validate_required([:type, :source, :content])
+    |> cast(attrs, [:type, :source, :content, :user_id, :embedding])
+    |> validate_required([:type, :source, :content, :user_id])
   end
 end

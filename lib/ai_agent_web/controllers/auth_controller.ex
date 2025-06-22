@@ -1,6 +1,6 @@
 defmodule AiAgentWeb.AuthController do
   use AiAgentWeb, :controller
-  plug Ueberauth
+  plug(Ueberauth)
 
   alias AiAgent.Accounts
   require Logger
