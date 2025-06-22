@@ -6,7 +6,7 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   import Ecto.Query
   require Logger
-  
+
   alias AiAgent.Repo
   alias AiAgent.Document
   alias AiAgent.User
@@ -14,21 +14,21 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   @doc """
   Store a document with its embedding in the vector database.
-  
+
   ## Parameters
   - user: User struct or user_id
   - content: Text content to store
   - source: Source of the document (email address, "hubspot", etc.)
   - type: Type of document ("email", "hubspot_note", "hubspot_contact", etc.)
   - metadata: Optional map with additional metadata
-  
+
   ## Returns
   - {:ok, document} on success
   - {:error, reason} on failure
   """
   def store_document(user, content, source, type, metadata \\ %{}) do
     user_id = get_user_id(user)
-    
+
     with {:ok, embedding} <- Embeddings.embed_text(content),
          {:ok, document} <- create_document(user_id, content, source, type, embedding, metadata) do
       Logger.info("Stored document: user_id=#{user_id}, type=#{type}, source=#{source}")
@@ -42,24 +42,25 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   @doc """
   Store multiple documents in batch. More efficient for large datasets.
-  
+
   ## Parameters
   - user: User struct or user_id
   - documents: List of maps with keys: :content, :source, :type, :metadata (optional)
-  
+
   ## Returns
   - {:ok, [documents]} on success
   - {:error, reason} on failure
   """
   def store_documents_batch(user, documents) when is_list(documents) do
+    Logger.debug("store_documents_batch/2 called with user=#{inspect(user)} and documents count=#{length(documents)}")
     user_id = get_user_id(user)
-    
+
     # Extract content for batch embedding
     contents = Enum.map(documents, & &1.content)
-    
+
     with {:ok, embeddings} <- Embeddings.embed_texts(contents) do
       # Create document structs with embeddings
-      document_params = 
+      document_params =
         documents
         |> Enum.zip(embeddings)
         |> Enum.map(fn {doc, embedding} ->
@@ -73,13 +74,13 @@ defmodule AiAgent.Embeddings.VectorStore do
             updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
           }
         end)
-      
+
       # Batch insert
       case Repo.insert_all(Document, document_params, returning: true) do
         {_count, documents} ->
           Logger.info("Batch stored #{length(documents)} documents for user_id=#{user_id}")
           {:ok, documents}
-        
+
         error ->
           Logger.error("Failed to batch insert documents: #{inspect(error)}")
           {:error, "Database insertion failed"}
@@ -93,7 +94,7 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   @doc """
   Find similar documents using vector similarity search.
-  
+
   ## Parameters
   - user: User struct or user_id
   - query_text: Text to search for
@@ -102,7 +103,7 @@ defmodule AiAgent.Embeddings.VectorStore do
     - :threshold - Minimum similarity threshold (default: 0.7)
     - :types - List of document types to filter by
     - :sources - List of sources to filter by
-  
+
   ## Returns
   - {:ok, [documents_with_similarity]} on success
   - {:error, reason} on failure
@@ -113,9 +114,9 @@ defmodule AiAgent.Embeddings.VectorStore do
     threshold = Map.get(opts, :threshold, 0.7)
     types = Map.get(opts, :types, [])
     sources = Map.get(opts, :sources, [])
-    
+
     with {:ok, query_embedding} <- Embeddings.embed_text(query_text) do
-      query = 
+      query =
         from(d in Document,
           where: d.user_id == ^user_id,
           select: %{
@@ -129,28 +130,28 @@ defmodule AiAgent.Embeddings.VectorStore do
           order_by: [desc: fragment("1 - (? <=> ?)", d.embedding, ^query_embedding)],
           limit: ^limit
         )
-      
+
       # Add type filter if specified
       query = if Enum.empty?(types) do
         query
       else
         from(d in query, where: d.type in ^types)
       end
-      
+
       # Add source filter if specified
       query = if Enum.empty?(sources) do
         query
       else
         from(d in query, where: d.source in ^sources)
       end
-      
+
       # Add similarity threshold
-      query = from(d in query, 
+      query = from(d in query,
         having: fragment("1 - (? <=> ?)", d.embedding, ^query_embedding) >= ^threshold
       )
-      
+
       results = Repo.all(query)
-      
+
       Logger.info("Found #{length(results)} similar documents for user_id=#{user_id}")
       {:ok, results}
     else
@@ -163,12 +164,12 @@ defmodule AiAgent.Embeddings.VectorStore do
   @doc """
   Get relevant context for RAG (Retrieval-Augmented Generation).
   Returns formatted text context from similar documents.
-  
+
   ## Parameters
   - user: User struct or user_id
   - query: Search query text
   - opts: Options for similarity search
-  
+
   ## Returns
   - {:ok, context_text} on success
   - {:error, reason} on failure
@@ -176,15 +177,15 @@ defmodule AiAgent.Embeddings.VectorStore do
   def get_rag_context(user, query, opts \\ %{}) do
     case find_similar_documents(user, query, opts) do
       {:ok, documents} ->
-        context = 
+        context =
           documents
           |> Enum.map(fn doc ->
             "#{doc.type |> String.upcase()} from #{doc.source}:\n#{doc.content}\n"
           end)
           |> Enum.join("\n---\n\n")
-        
+
         {:ok, context}
-      
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -192,14 +193,14 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   @doc """
   Delete documents by user and optional filters.
-  
+
   ## Parameters
   - user: User struct or user_id
   - opts: Options map with optional keys:
     - :types - List of document types to delete
     - :sources - List of sources to delete
     - :older_than - DateTime to delete documents older than
-  
+
   ## Returns
   - {:ok, deleted_count} on success
   - {:error, reason} on failure
@@ -209,33 +210,33 @@ defmodule AiAgent.Embeddings.VectorStore do
     types = Map.get(opts, :types, [])
     sources = Map.get(opts, :sources, [])
     older_than = Map.get(opts, :older_than)
-    
+
     query = from(d in Document, where: d.user_id == ^user_id)
-    
+
     # Add filters
     query = if Enum.empty?(types) do
       query
     else
       from(d in query, where: d.type in ^types)
     end
-    
+
     query = if Enum.empty?(sources) do
       query
     else
       from(d in query, where: d.source in ^sources)
     end
-    
+
     query = if older_than do
       from(d in query, where: d.inserted_at < ^older_than)
     else
       query
     end
-    
+
     case Repo.delete_all(query) do
       {count, _} ->
         Logger.info("Deleted #{count} documents for user_id=#{user_id}")
         {:ok, count}
-      
+
       error ->
         Logger.error("Failed to delete documents: #{inspect(error)}")
         {:error, "Database deletion failed"}
@@ -244,14 +245,14 @@ defmodule AiAgent.Embeddings.VectorStore do
 
   @doc """
   Get document statistics for a user.
-  
+
   ## Returns
   - Map with document counts by type and source
   """
   def get_document_stats(user) do
     user_id = get_user_id(user)
-    
-    type_stats = 
+
+    type_stats =
       from(d in Document,
         where: d.user_id == ^user_id,
         group_by: d.type,
@@ -259,8 +260,8 @@ defmodule AiAgent.Embeddings.VectorStore do
       )
       |> Repo.all()
       |> Map.new()
-    
-    source_stats = 
+
+    source_stats =
       from(d in Document,
         where: d.user_id == ^user_id,
         group_by: d.source,
@@ -268,11 +269,11 @@ defmodule AiAgent.Embeddings.VectorStore do
       )
       |> Repo.all()
       |> Map.new()
-    
-    total_count = 
+
+    total_count =
       from(d in Document, where: d.user_id == ^user_id, select: count(d.id))
       |> Repo.one()
-    
+
     %{
       total: total_count,
       by_type: type_stats,
@@ -294,7 +295,7 @@ defmodule AiAgent.Embeddings.VectorStore do
       type: type,
       embedding: embedding
     }
-    
+
     case %Document{} |> Document.changeset(attrs) |> Repo.insert() do
       {:ok, document} -> {:ok, document}
       {:error, changeset} -> {:error, "Database insertion failed: #{inspect(changeset.errors)}"}

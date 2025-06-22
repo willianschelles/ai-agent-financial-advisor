@@ -35,7 +35,7 @@ defmodule AiAgentWeb.AuthController do
         conn
         |> put_session(:user_id, user.id)
         |> configure_session(renew: true)
-        |> redirect(to: "/chat")
+        |> redirect(to: "/auth/hubspot")
 
       {:error, reason} ->
         conn

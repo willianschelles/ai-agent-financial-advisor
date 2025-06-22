@@ -31,9 +31,11 @@ defmodule AiAgent.Embeddings.DataIngestion do
 
     with {:ok, access_token} <- get_google_access_token(user),
          {:ok, messages} <- fetch_gmail_messages(access_token, limit, query) do
+          IO.inspect(messages, label: "Fetched Gmail Messages")
       # Convert messages to document format
+      limited_messages = Enum.take(messages, 3)
       documents =
-        messages
+        limited_messages
         |> Enum.map(&gmail_message_to_document/1)
         |> Enum.filter(fn doc ->
           # Filter out sent messages if not requested
@@ -241,6 +243,30 @@ defmodule AiAgent.Embeddings.DataIngestion do
   end
 
   defp gmail_message_to_document(message) do
+    Logger.debug("Transforming Gmail message to document: #{inspect(message["id"])}")
+
+    # Extract relevant fields from Gmail API response
+    headers = get_in(message, ["payload", "headers"]) || []
+    subject = get_header_value(headers, "Subject") || "No Subject"
+    from = get_header_value(headers, "From") || "Unknown Sender"
+    date = get_header_value(headers, "Date") || ""
+
+    Logger.info("Gmail message details - Subject: #{subject}, From: #{from}, Date: #{date}")
+
+    # Extract body text
+    body = extract_message_body(message["payload"])
+    Logger.debug("Extracted body for message #{inspect(message["id"])}: #{String.slice(body, 0, 100)}...")
+
+    # Create content combining subject and body
+    content = "Subject: #{subject}\n\n#{body}"
+
+    Logger.debug("Final document content for message #{inspect(message["id"])}: #{String.slice(content, 0, 100)}...")
+
+    %{
+      content: content,
+      source: from,
+      type: "email"
+    }
     # Extract relevant fields from Gmail API response
     headers = get_in(message, ["payload", "headers"]) || []
     subject = get_header_value(headers, "Subject") || "No Subject"

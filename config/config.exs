@@ -11,6 +11,10 @@ config :ai_agent,
   ecto_repos: [AiAgent.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Configure pgvector
+config :ai_agent, AiAgent.Repo,
+  types: AiAgent.PostgresTypes
+
 # Configures the endpoint
 config :ai_agent, AiAgentWeb.Endpoint,
   url: [host: "localhost"],
