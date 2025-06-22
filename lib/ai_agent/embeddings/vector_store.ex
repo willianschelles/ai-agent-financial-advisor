@@ -52,7 +52,10 @@ defmodule AiAgent.Embeddings.VectorStore do
   - {:error, reason} on failure
   """
   def store_documents_batch(user, documents) when is_list(documents) do
-    Logger.debug("store_documents_batch/2 called with user=#{inspect(user)} and documents count=#{length(documents)}")
+    Logger.debug(
+      "store_documents_batch/2 called with user=#{inspect(user)} and documents count=#{length(documents)}"
+    )
+
     user_id = get_user_id(user)
 
     # Extract content for batch embedding
@@ -111,7 +114,7 @@ defmodule AiAgent.Embeddings.VectorStore do
   def find_similar_documents(user, query_text, opts \\ %{}) do
     user_id = get_user_id(user)
     limit = Map.get(opts, :limit, 10)
-    threshold = Map.get(opts, :threshold, 0.7)
+    threshold = Map.get(opts, :threshold, 0.3)  # Lowered from 0.7 to 0.3 for better recall
     types = Map.get(opts, :types, [])
     sources = Map.get(opts, :sources, [])
 
@@ -119,6 +122,7 @@ defmodule AiAgent.Embeddings.VectorStore do
       query =
         from(d in Document,
           where: d.user_id == ^user_id,
+          where: fragment("1 - (? <=> ?)", d.embedding, ^query_embedding) >= ^threshold,
           select: %{
             id: d.id,
             content: d.content,
@@ -132,23 +136,20 @@ defmodule AiAgent.Embeddings.VectorStore do
         )
 
       # Add type filter if specified
-      query = if Enum.empty?(types) do
-        query
-      else
-        from(d in query, where: d.type in ^types)
-      end
+      query =
+        if Enum.empty?(types) do
+          query
+        else
+          from(d in query, where: d.type in ^types)
+        end
 
       # Add source filter if specified
-      query = if Enum.empty?(sources) do
-        query
-      else
-        from(d in query, where: d.source in ^sources)
-      end
-
-      # Add similarity threshold
-      query = from(d in query,
-        having: fragment("1 - (? <=> ?)", d.embedding, ^query_embedding) >= ^threshold
-      )
+      query =
+        if Enum.empty?(sources) do
+          query
+        else
+          from(d in query, where: d.source in ^sources)
+        end
 
       results = Repo.all(query)
 
@@ -214,23 +215,26 @@ defmodule AiAgent.Embeddings.VectorStore do
     query = from(d in Document, where: d.user_id == ^user_id)
 
     # Add filters
-    query = if Enum.empty?(types) do
-      query
-    else
-      from(d in query, where: d.type in ^types)
-    end
+    query =
+      if Enum.empty?(types) do
+        query
+      else
+        from(d in query, where: d.type in ^types)
+      end
 
-    query = if Enum.empty?(sources) do
-      query
-    else
-      from(d in query, where: d.source in ^sources)
-    end
+    query =
+      if Enum.empty?(sources) do
+        query
+      else
+        from(d in query, where: d.source in ^sources)
+      end
 
-    query = if older_than do
-      from(d in query, where: d.inserted_at < ^older_than)
-    else
-      query
-    end
+    query =
+      if older_than do
+        from(d in query, where: d.inserted_at < ^older_than)
+      else
+        query
+      end
 
     case Repo.delete_all(query) do
       {count, _} ->
