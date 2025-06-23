@@ -20,8 +20,12 @@ defmodule HubspotAuth.HubspotStrategy do
     # Generate a fresh state token
     state = generate_state()
     # state = "TEST_STATE_123"
+    redirect_uri =
+      System.get_env("HUBSPOT_REDIRECT_URI") ||
+        "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback"
+
     opts = [
-      redirect_uri: "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback",
+      redirect_uri: redirect_uri,
       scope: scopes,
       state: state
     ]
@@ -49,9 +53,15 @@ defmodule HubspotAuth.HubspotStrategy do
     else
       module = option(conn, :oauth2_module)
 
+      redirect_uri =
+        System.get_env("HUBSPOT_REDIRECT_URI") ||
+          "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback"
+
+      IO.inspect(redirect_uri, label: "Redirect URI")
+
       token_params = [
         code: code,
-        redirect_uri: "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback",
+        redirect_uri: redirect_uri,
         state: state
       ]
 

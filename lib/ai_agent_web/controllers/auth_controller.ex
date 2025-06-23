@@ -33,13 +33,13 @@ defmodule AiAgentWeb.AuthController do
     case Accounts.upsert_user_from_auth(auth) do
       {:ok, user} ->
         redirect_path = determine_redirect_path(user, "google")
-        
+
         conn
         |> put_session(:user_id, user.id)
         |> put_session(:created_at, DateTime.utc_now() |> DateTime.to_unix())
         |> configure_session(renew: true)
         |> put_flash(:info, "Successfully connected to Google! You can now connect HubSpot on your dashboard.")
-        |> redirect(to: redirect_path)
+        |> redirect(to: "/login")
 
       {:error, reason} ->
         conn
@@ -55,14 +55,14 @@ defmodule AiAgentWeb.AuthController do
     IO.inspect(auth.credentials, label: "Raw HubSpot credentials")
     IO.inspect(auth.credentials.token, label: "Raw token field")
     IO.inspect(get_session(conn, :user_id), label: "Session user_id")
-    
+
     # Parse the token if it's a JSON string, otherwise use as-is
-    {access_token, token_type, refresh_token, expires_in} = 
+    {access_token, token_type, refresh_token, expires_in} =
       case auth.credentials.token do
         token when is_binary(token) ->
           # Try to parse as JSON first
           case Jason.decode(token) do
-            {:ok, %{"access_token" => access_token, "token_type" => token_type, 
+            {:ok, %{"access_token" => access_token, "token_type" => token_type,
                     "refresh_token" => refresh_token, "expires_in" => expires_in}} ->
               {access_token, token_type, refresh_token, expires_in}
             {:error, _} ->
@@ -73,7 +73,7 @@ defmodule AiAgentWeb.AuthController do
           # Not a string, use as-is
           {token, auth.credentials.token_type, auth.credentials.refresh_token, auth.credentials.expires_at}
       end
-    
+
     # Extract HubSpot tokens from auth
     tokens = %{
       access_token: access_token,
@@ -81,12 +81,12 @@ defmodule AiAgentWeb.AuthController do
       refresh_token: refresh_token,
       expires_in: expires_in
     }
-    
+
     IO.inspect(tokens, label: "Parsed tokens")
-    
+
     # Try to find user by ID (from session) first, then fallback to email
     user_result = case get_session(conn, :user_id) do
-      nil -> 
+      nil ->
         Logger.info("No user_id in session, trying email fallback")
         # Fallback: try to find by email (if HubSpot provides it)
         email = auth.info.email
@@ -98,7 +98,7 @@ defmodule AiAgentWeb.AuthController do
         else
           {:error, "No user ID in session and no valid email from HubSpot"}
         end
-      
+
       user_id when is_integer(user_id) or is_binary(user_id) ->
         Logger.info("Found user_id in session: #{user_id}")
         user_id = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
@@ -106,13 +106,13 @@ defmodule AiAgentWeb.AuthController do
     end
 
     IO.inspect(user_result, label: "Final user_result")
-    
+
     case user_result do
       {:ok, user} ->
         Logger.info("✅ HubSpot OAuth SUCCESS - User #{user.id} tokens saved")
         IO.inspect(user.hubspot_tokens, label: "Final user hubspot_tokens")
         redirect_path = determine_redirect_path(user, "hubspot")
-        
+
         conn
         |> put_session(:user_id, user.id)
         |> configure_session(renew: true)
@@ -132,7 +132,7 @@ defmodule AiAgentWeb.AuthController do
   def logout(conn, _params) do
     user_id = if conn.assigns[:current_user], do: conn.assigns[:current_user].id, else: "unknown"
     Logger.info("User #{user_id} logging out")
-    
+
     conn
     |> configure_session(drop: true)
     |> clear_session()
@@ -143,37 +143,37 @@ defmodule AiAgentWeb.AuthController do
   defp determine_redirect_path(user, auth_type) do
     has_google = has_google_tokens?(user)
     has_hubspot = has_hubspot_tokens?(user)
-    
+
     case auth_type do
       "google" ->
         # After Google auth, redirect to dashboard to connect HubSpot
         "/dashboard"
-      
+
       "hubspot" ->
         # HubSpot connection - if they now have both, they're fully set up
         if has_google and has_hubspot do
           # Trigger initial RAG data ingestion now that both services are connected
-          Task.start(fn -> 
+          Task.start(fn ->
             AiAgent.Embeddings.RAG.initialize_for_user(user)
           end)
           "/chat"
         else
           "/dashboard"
         end
-      
+
       _ ->
         "/dashboard"
     end
   end
 
   defp has_google_tokens?(user) do
-    not is_nil(user.google_tokens) and 
+    not is_nil(user.google_tokens) and
     Map.has_key?(user.google_tokens, "access_token") and
     not is_nil(user.google_tokens["access_token"])
   end
 
   defp has_hubspot_tokens?(user) do
-    not is_nil(user.hubspot_tokens) and 
+    not is_nil(user.hubspot_tokens) and
     Map.has_key?(user.hubspot_tokens, "access_token") and
     not is_nil(user.hubspot_tokens["access_token"])
   end
