@@ -27,6 +27,7 @@ defmodule AiAgentWeb.Router do
   scope "/", AiAgentWeb do
     pipe_through([:browser, :browser_auth])
 
+    live("/dashboard", DashboardLive)
     live("/chat", ChatLive)
     live("/rules", RulesLive)
   end
@@ -50,7 +51,7 @@ defmodule AiAgentWeb.Router do
 
   pipeline :browser_auth do
     plug(:fetch_session)
-    plug(AiAgentWeb.Plugs.Auth)
+    plug(AiAgentWeb.Plugs.SessionManager)
   end
 
   # Webhook endpoints for external services

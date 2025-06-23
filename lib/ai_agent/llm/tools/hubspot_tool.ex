@@ -571,4 +571,52 @@ defmodule AiAgent.LLM.Tools.HubSpotTool do
   defp build_deal_url(deal_id) do
     "https://app.hubspot.com/deals/#{deal_id}"
   end
+
+  @doc """
+  Test HubSpot connection for the dashboard.
+  """
+  def test_connection(user) do
+    case get_access_token(user) do
+      {:ok, access_token} ->
+        test_token(access_token)
+        
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp get_access_token(user) do
+    case user.hubspot_tokens do
+      %{"access_token" => access_token} when is_binary(access_token) ->
+        {:ok, access_token}
+
+      _ ->
+        Logger.error("No valid HubSpot access token found for user #{user.id}")
+        {:error, "HubSpot access not authorized"}
+    end
+  end
+
+  @doc """
+  Test if a HubSpot access token is valid by making a simple API call.
+  """
+  def test_token(access_token) do
+    headers = [
+      {"Authorization", "Bearer #{access_token}"},
+      {"Accept", "application/json"}
+    ]
+
+    case Req.get("https://api.hubapi.com/crm/v3/owners", headers: headers) do
+      {:ok, %{status: 200}} ->
+        {:ok, :valid}
+
+      {:ok, %{status: 401}} ->
+        {:error, :unauthorized}
+
+      {:ok, %{status: status}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 end

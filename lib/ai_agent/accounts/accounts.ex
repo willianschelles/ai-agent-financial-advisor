@@ -44,6 +44,18 @@ defmodule AiAgent.Accounts do
     |> Repo.update()
   end
 
+  def disconnect_hubspot(user) do
+    user
+    |> User.changeset(%{hubspot_tokens: nil})
+    |> Repo.update()
+  end
+
+  def update_google_tokens(user, new_tokens) do
+    user
+    |> User.changeset(%{google_tokens: new_tokens})
+    |> Repo.update()
+  end
+
   def get_user!(id) do
     Repo.get!(User, id)
   end

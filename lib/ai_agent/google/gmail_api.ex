@@ -377,4 +377,28 @@ defmodule AiAgent.Google.GmailAPI do
   end
 
   defp extract_email_from_header(_), do: nil
+
+  @doc """
+  Test if a Google access token is valid by making a simple API call.
+  """
+  def test_token(access_token) do
+    headers = [
+      {"Authorization", "Bearer #{access_token}"},
+      {"Accept", "application/json"}
+    ]
+
+    case Req.get("#{@base_url}/users/me/profile", headers: headers) do
+      {:ok, %{status: 200}} ->
+        {:ok, :valid}
+
+      {:ok, %{status: 401}} ->
+        {:error, :unauthorized}
+
+      {:ok, %{status: status}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 end
