@@ -16,10 +16,15 @@ defmodule AiAgentWeb.Endpoint do
   ]
 
   socket("/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
-  )
-
+      websocket: [
+        connect_info: [session: @session_options],
+        check_origin: ["https://ai-agent-financial-advisor.onrender.com"]
+      ],
+      longpoll: [
+        connect_info: [session: @session_options],
+        check_origin: ["https://ai-agent-financial-advisor.onrender.com"]
+      ]
+    )
   # Serve at "/" the static files from "priv/static" directory.
   #
   # You should set gzip to true if you are running phx.digest
