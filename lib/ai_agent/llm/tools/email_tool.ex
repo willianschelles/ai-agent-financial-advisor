@@ -38,7 +38,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
               },
               subject: %{
                 type: "string",
-                description: "Email subject line"
+                description: "Professional email subject line. Should be clear, concise, and business-appropriate. Examples: 'Meeting Request - Tomorrow at 2pm', 'Investment Portfolio Review', 'Following Up on Our Discussion'. Avoid literal descriptions of the request."
               },
               body: %{
                 type: "string",

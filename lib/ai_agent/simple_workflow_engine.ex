@@ -186,8 +186,8 @@ defmodule AiAgent.SimpleWorkflowEngine do
     meeting_details = get_in(task.workflow_state, ["meeting_details"])
     time_mentioned = Map.get(meeting_details, "time_mentioned", "tomorrow")
     
-    # Create email content
-    subject = "Meeting Request - #{time_mentioned}"
+    # Create professional email subject based on context
+    subject = generate_professional_subject(task, recipient_name, time_mentioned)
     body = """
     Hi #{recipient_name},
 
@@ -206,6 +206,64 @@ defmodule AiAgent.SimpleWorkflowEngine do
       "subject" => subject,
       "body" => body
     })
+  end
+
+  defp generate_professional_subject(task, recipient_name, time_mentioned) do
+    # Extract the original request context
+    original_request = task.request_params["message"] || task.workflow_state["original_request"] || ""
+    
+    # Analyze the request to determine the best subject
+    cond do
+      String.contains?(String.downcase(original_request), ["meeting", "schedule", "availability"]) ->
+        format_meeting_subject(recipient_name, time_mentioned)
+      
+      String.contains?(String.downcase(original_request), ["follow up", "follow-up", "checking in"]) ->
+        "Following Up - #{recipient_name}"
+      
+      String.contains?(String.downcase(original_request), ["discussion", "discuss", "talk about"]) ->
+        "Discussion Request - #{extract_topic(original_request)}"
+      
+      String.contains?(String.downcase(original_request), ["question", "inquiry", "ask about"]) ->
+        "Inquiry - #{extract_topic(original_request)}"
+      
+      true ->
+        # Default professional subject
+        "Meeting Request - #{format_time_for_subject(time_mentioned)}"
+    end
+  end
+
+  defp format_meeting_subject(_recipient_name, time_mentioned) do
+    formatted_time = format_time_for_subject(time_mentioned)
+    "Meeting Request - #{formatted_time}"
+  end
+
+  defp format_time_for_subject(time_mentioned) do
+    # Convert casual time mentions to more professional format
+    time_mentioned
+    |> String.replace("tomorrow", "Tomorrow")
+    |> String.replace("next week", "Next Week")
+    |> String.replace("this week", "This Week")
+    |> String.replace("today", "Today")
+  end
+
+  defp extract_topic(original_request) do
+    # Simple topic extraction - could be enhanced with NLP
+    cond do
+      String.contains?(String.downcase(original_request), ["investment", "portfolio"]) ->
+        "Investment Discussion"
+      
+      String.contains?(String.downcase(original_request), ["retirement", "planning"]) ->
+        "Retirement Planning"
+      
+      String.contains?(String.downcase(original_request), ["review", "account"]) ->
+        "Account Review"
+      
+      String.contains?(String.downcase(original_request), ["strategy", "strategies"]) ->
+        "Strategy Discussion"
+      
+      true ->
+        "Scheduling Discussion"
+    end
   end
   
   defp resume_task_execution(task, email_data) do
