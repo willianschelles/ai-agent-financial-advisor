@@ -69,9 +69,21 @@ defmodule HubspotAuth.HubspotStrategy do
   defp generate_state, do: 16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
 
   defp fetch_user(conn, token) do
-    conn
-    |> put_private(:hubspot_token, token)
-    # |> put_private(:hubspot_user, token.other_params)
+    # First, store the token in the connection
+    conn = conn |> put_private(:hubspot_token, token)
+    
+    # Then create the auth struct using the updated connection
+    auth = %Ueberauth.Auth{
+      provider: :hubspot,
+      strategy: __MODULE__,
+      uid: token.other_params["user_id"],
+      credentials: credentials(conn),
+      info: info(conn),
+      extra: extra(conn)
+    }
+
+    # Finally, store the auth struct
+    conn |> put_private(:ueberauth_auth, auth)
   end
 
   def credentials(conn) do
