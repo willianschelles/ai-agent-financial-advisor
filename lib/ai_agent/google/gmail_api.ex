@@ -171,6 +171,61 @@ defmodule AiAgent.Google.GmailAPI do
   - {:ok, message} on success
   - {:error, reason} on failure
   """
+  @doc """
+  Get Gmail history to find new messages since a given history ID.
+  
+  ## Parameters
+  - user: User struct with Google OAuth tokens
+  - start_history_id: History ID to start from
+  - params: Optional parameters for the history query
+  
+  ## Returns
+  - {:ok, history_data} on success
+  - {:error, reason} on failure
+  """
+  def get_history(user, start_history_id, params \\ %{}) do
+    Logger.info("Getting Gmail history for user #{user.id} since #{start_history_id}")
+    
+    case get_access_token(user) do
+      {:ok, access_token} ->
+        url = "#{@base_url}/users/me/history"
+        
+        headers = [
+          {"Authorization", "Bearer #{access_token}"}
+        ]
+        
+        # Build query parameters
+        query_params = params
+        |> Map.put(:startHistoryId, start_history_id)
+        |> Map.take([:startHistoryId, :maxResults, :pageToken, :labelId, :historyTypes])
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Enum.into(%{})
+        
+        Logger.debug("Fetching history with params: #{inspect(query_params)}")
+        
+        case Req.get(url, headers: headers, params: query_params) do
+          {:ok, %{status: 200, body: response}} ->
+            Logger.info("Successfully retrieved Gmail history")
+            {:ok, response}
+          
+          {:ok, %{status: 404}} ->
+            Logger.warn("History ID #{start_history_id} not found, might be too old")
+            {:error, "History ID not found (too old)"}
+          
+          {:ok, %{status: status, body: body}} ->
+            Logger.error("Gmail API error: #{status} - #{inspect(body)}")
+            {:error, "Gmail API error: #{status}"}
+          
+          {:error, reason} ->
+            Logger.error("Failed to call Gmail API: #{inspect(reason)}")
+            {:error, "Network error: #{inspect(reason)}"}
+        end
+      
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   def reply_to_message(user, message_id, reply_data) do
     Logger.info("Replying to message #{message_id} for user #{user.id}")
 
@@ -190,7 +245,17 @@ defmodule AiAgent.Google.GmailAPI do
 
   # Private helper functions
 
-  defp get_access_token(user) do
+  @doc """
+  Get access token for Gmail API access.
+  
+  ## Parameters
+  - user: User struct with Google OAuth tokens
+  
+  ## Returns
+  - {:ok, access_token} on success
+  - {:error, reason} on failure
+  """
+  def get_access_token(user) do
     case user.google_tokens do
       %{"access_token" => access_token} when is_binary(access_token) ->
         # TODO: Check if token is expired and refresh if needed

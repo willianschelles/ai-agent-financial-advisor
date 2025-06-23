@@ -235,7 +235,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
       emails = find_email_with_multiple_strategies(user, name, context_hint)
 
       if Enum.empty?(emails) do
-        Logger.warn("No emails found for '#{name}', trying fallback strategies")
+        Logger.warning("No emails found for '#{name}', trying fallback strategies")
         
         # Try additional fallback strategies
         fallback_emails = try_fallback_email_search(user, name)
@@ -325,7 +325,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
         extract_emails_from_documents(documents, original_name)
         
       {:error, reason} ->
-        Logger.warn("Document search failed for '#{search_query}': #{reason}")
+        Logger.warning("Document search failed for '#{search_query}': #{reason}")
         []
     end
   end

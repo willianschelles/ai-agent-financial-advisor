@@ -28,6 +28,7 @@ defmodule AiAgentWeb.Router do
     pipe_through([:browser, :browser_auth])
 
     live("/chat", ChatLive)
+    live("/rules", RulesLive)
   end
 
 

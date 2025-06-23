@@ -11,7 +11,9 @@ defmodule AiAgentWeb.WebhookController do
   require Logger
 
   alias AiAgent.EventHandlers.WebhookHandler
+  alias AiAgent.SimpleWebhookHandler
   alias AiAgent.Accounts
+  alias AiAgent.Rules.RuleEngine
 
   @doc """
   Handle Gmail webhook notifications.
@@ -23,23 +25,49 @@ defmodule AiAgentWeb.WebhookController do
 
     case extract_user_id_from_webhook(conn, params, "gmail") do
       {:ok, user_id} ->
-        case WebhookHandler.process_webhook("gmail", params, user_id) do
+        # Process proactive rules first
+        proactive_results = process_proactive_rules(user_id, "email_received", params)
+        
+        # Try new simple webhook handler first
+        case SimpleWebhookHandler.handle_gmail_webhook(params, user_id) do
           {:ok, results} ->
-            Logger.info("Gmail webhook processed successfully: #{length(results)} tasks resumed")
+            Logger.info("Gmail webhook processed successfully with SimpleWebhookHandler: #{length(results)} tasks resumed")
 
             send_webhook_response(conn, :ok, %{
               status: "processed",
-              tasks_resumed: length(results)
+              tasks_resumed: length(results),
+              proactive_rules_executed: proactive_results,
+              handler: "simple"
             })
 
           {:error, reason} ->
-            Logger.error("Failed to process Gmail webhook: #{reason}")
-            send_webhook_response(conn, :unprocessable_entity, %{error: reason})
+            Logger.warning("SimpleWebhookHandler failed (#{reason}), trying original handler")
+            
+            # Fallback to original webhook handler
+            case WebhookHandler.process_webhook("gmail", params, user_id) do
+              {:ok, results} ->
+                Logger.info("Gmail webhook processed successfully with original handler: #{length(results)} tasks resumed")
+
+                send_webhook_response(conn, :ok, %{
+                  status: "processed",
+                  tasks_resumed: length(results),
+                  proactive_rules_executed: proactive_results,
+                  handler: "original"
+                })
+
+              {:error, reason2} ->
+                Logger.error("Both webhook handlers failed: #{reason} / #{reason2}")
+                send_webhook_response(conn, :unprocessable_entity, %{
+                  error: "Both handlers failed", 
+                  simple_error: reason,
+                  original_error: reason2,
+                  proactive_rules_executed: proactive_results
+                })
+            end
         end
 
       {:error, reason} ->
         Logger.error("Failed to extract user ID from Gmail webhook: #{reason}")
-        # send_webhook_response(conn, :ok, %{})
         send_webhook_response(conn, :bad_request, %{error: reason})
     end
   end
@@ -86,6 +114,10 @@ defmodule AiAgentWeb.WebhookController do
 
     case extract_user_id_from_webhook(conn, params, "hubspot") do
       {:ok, user_id} ->
+        # Process proactive rules based on HubSpot event type
+        trigger_type = determine_hubspot_trigger_type(params)
+        proactive_results = process_proactive_rules(user_id, trigger_type, params)
+        
         case WebhookHandler.process_webhook("hubspot", params, user_id) do
           {:ok, results} ->
             Logger.info(
@@ -94,12 +126,16 @@ defmodule AiAgentWeb.WebhookController do
 
             send_webhook_response(conn, :ok, %{
               status: "processed",
-              tasks_resumed: length(results)
+              tasks_resumed: length(results),
+              proactive_rules_executed: proactive_results
             })
 
           {:error, reason} ->
             Logger.error("Failed to process HubSpot webhook: #{reason}")
-            send_webhook_response(conn, :unprocessable_entity, %{error: reason})
+            send_webhook_response(conn, :unprocessable_entity, %{
+              error: reason,
+              proactive_rules_executed: proactive_results
+            })
         end
 
       {:error, reason} ->
@@ -245,5 +281,27 @@ defmodule AiAgentWeb.WebhookController do
     conn
     |> put_status(status)
     |> json(data)
+  end
+
+  defp process_proactive_rules(user_id, trigger_type, event_data) do
+    case RuleEngine.process_event(user_id, trigger_type, event_data) do
+      {:ok, results} ->
+        Logger.info("Processed #{length(results)} proactive rules for user #{user_id}")
+        results
+      
+      {:error, reason} ->
+        Logger.error("Failed to process proactive rules: #{reason}")
+        []
+    end
+  end
+
+  defp determine_hubspot_trigger_type(params) do
+    # HubSpot webhooks contain subscription data that indicates the object type
+    case get_in(params, ["subscriptionType"]) do
+      "contact.creation" -> "hubspot_contact_created"
+      "contact.propertyChange" -> "hubspot_contact_updated"
+      "engagement.creation" -> "hubspot_note_created"
+      _ -> "hubspot_contact_created" # default fallback
+    end
   end
 end

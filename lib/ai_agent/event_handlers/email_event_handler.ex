@@ -79,7 +79,7 @@ defmodule AiAgent.EventHandlers.EmailEventHandler do
     # 2. Subscribe to Gmail changes using watch() API
     # 3. Configure webhook endpoint to receive notifications
     
-    case mock_setup_gmail_watch(user) do
+    case setup_gmail_watch(user) do
       {:ok, watch_response} ->
         Logger.info("Successfully set up Gmail watch for user #{user.id}")
         {:ok, watch_response}
@@ -97,7 +97,7 @@ defmodule AiAgent.EventHandlers.EmailEventHandler do
     Logger.info("Stopping Gmail push notifications for user #{user.id}")
     
     # TODO: Implement Gmail watch stop
-    case mock_stop_gmail_watch(user) do
+    case stop_gmail_watch(user) do
       {:ok, _} ->
         Logger.info("Successfully stopped Gmail watch for user #{user.id}")
         {:ok, %{status: "stopped"}}
@@ -145,17 +145,130 @@ defmodule AiAgent.EventHandlers.EmailEventHandler do
     end
   end
   
-  defp enhance_email_event(email_event, _webhook_data) do
-    # In a real implementation, we would fetch additional email details
-    # using the Gmail API with the message_id
+  defp enhance_email_event(email_event, webhook_data) do
+    # Extract user from webhook data to get their Gmail access
+    user_id = extract_user_id_from_webhook_data(webhook_data)
     
-    # For now, return mock enhanced data
-    Map.merge(email_event, %{
-      from: "sender@example.com",
-      subject: "Email Reply",
-      body: "This is a reply to your email...",
-      labels: ["INBOX", "UNREAD"]
-    })
+    if user_id do
+      case AiAgent.Repo.get(AiAgent.User, user_id) do
+        nil ->
+          Logger.error("User #{user_id} not found")
+          email_event
+        
+        user ->
+          # Get the history ID to find new messages
+          history_id = Map.get(email_event, :history_id)
+          
+          if history_id do
+            enhance_with_gmail_history(email_event, user, history_id)
+          else
+            Logger.warn("No history_id in email event, cannot fetch details")
+            email_event
+          end
+      end
+    else
+      Logger.warn("No user_id found in webhook data")
+      email_event
+    end
+  end
+  
+  defp enhance_with_gmail_history(email_event, user, history_id) do
+    Logger.info("Enhancing email event with Gmail history from #{history_id}")
+    
+    case GmailAPI.get_history(user, history_id, %{historyTypes: ["messageAdded"]}) do
+      {:ok, history_response} ->
+        # Extract new messages from history
+        case extract_new_messages_from_history(history_response) do
+          [] ->
+            Logger.info("No new messages found in history")
+            email_event
+          
+          messages ->
+            # Get details for the first new message (most recent)
+            latest_message = List.first(messages)
+            message_id = latest_message["id"]
+            
+            Logger.info("Found new message: #{message_id}")
+            enhance_with_message_details(email_event, user, message_id)
+        end
+      
+      {:error, reason} ->
+        Logger.error("Failed to get Gmail history: #{reason}")
+        email_event
+    end
+  end
+  
+  defp enhance_with_message_details(email_event, user, message_id) do
+    case GmailAPI.get_message(user, message_id) do
+      {:ok, message} ->
+        # Extract email details from the message
+        headers = get_in(message, ["payload", "headers"]) || []
+        labels = Map.get(message, "labelIds", [])
+        
+        enhanced_event = Map.merge(email_event, %{
+          message_id: message["id"],
+          thread_id: message["threadId"],
+          from: extract_header_value(headers, "From"),
+          to: extract_header_value(headers, "To"),
+          subject: extract_header_value(headers, "Subject"),
+          date: extract_header_value(headers, "Date"),
+          body: extract_message_body(message),
+          labels: labels
+        })
+        
+        Logger.info("Enhanced email event with real Gmail data")
+        enhanced_event
+      
+      {:error, reason} ->
+        Logger.error("Failed to get message details: #{reason}")
+        email_event
+    end
+  end
+  
+  defp extract_new_messages_from_history(history_response) do
+    case Map.get(history_response, "history") do
+      nil -> []
+      history_items ->
+        history_items
+        |> Enum.flat_map(fn item ->
+          Map.get(item, "messagesAdded", [])
+        end)
+        |> Enum.map(fn item ->
+          Map.get(item, "message")
+        end)
+        |> Enum.reject(&is_nil/1)
+    end
+  end
+  
+  defp extract_user_id_from_webhook_data(webhook_data) do
+    # Try to extract user_id from webhook data
+    case Map.get(webhook_data, "user_id") do
+      nil ->
+        # Try to extract from message data
+        case get_in(webhook_data, ["message", "data"]) do
+          nil -> nil
+          encoded_data ->
+            try do
+              decoded_data = Base.decode64!(encoded_data)
+              message_data = Jason.decode!(decoded_data)
+              email_address = Map.get(message_data, "emailAddress")
+              
+              if email_address do
+                # Look up user by email
+                case AiAgent.Repo.get_by(AiAgent.User, email: email_address) do
+                  nil -> nil
+                  user -> user.id
+                end
+              else
+                nil
+              end
+            rescue
+              _ -> nil
+            end
+        end
+      
+      user_id -> user_id
+    end
   end
   
   defp is_incoming_email?(email_event) do
@@ -170,25 +283,81 @@ defmodule AiAgent.EventHandlers.EmailEventHandler do
     "INBOX" in labels and "SENT" not in labels
   end
   
-  # Mock functions for Gmail API integration
-  # In production, these would use the actual Gmail API
+  # Real Gmail API implementations
   
-  defp mock_setup_gmail_watch(user) do
-    # Mock implementation of Gmail watch setup
-    Logger.debug("Mock: Setting up Gmail watch for user #{user.id}")
+  defp setup_gmail_watch(user) do
+    # Real implementation of Gmail watch setup using Gmail API
+    Logger.debug("Setting up Gmail watch for user #{user.id}")
     
-    # Simulate successful watch setup
-    {:ok, %{
-      historyId: "123456789",
-      expiration: (DateTime.add(DateTime.utc_now(), 7, :day) |> DateTime.to_unix()) * 1000
-    }}
+    case GmailAPI.get_access_token(user) do
+      {:ok, access_token} ->
+        url = "https://gmail.googleapis.com/gmail/v1/users/me/watch"
+        
+        headers = [
+          {"Authorization", "Bearer #{access_token}"},
+          {"Content-Type", "application/json"}
+        ]
+        
+        # Configure the watch request
+        # You'll need to set up a Google Cloud Pub/Sub topic for this
+        webhook_base_url = System.get_env("WEBHOOK_BASE_URL") || "https://your-app.com"
+        topic_name = System.get_env("GMAIL_PUBSUB_TOPIC") || "projects/your-project/topics/gmail-notifications"
+        
+        payload = %{
+          topicName: topic_name,
+          labelIds: ["INBOX"],  # Only watch for inbox messages
+          labelFilterAction: "include"
+        }
+        
+        case Req.post(url, headers: headers, json: payload) do
+          {:ok, %{status: 200, body: response}} ->
+            Logger.info("Successfully set up Gmail watch for user #{user.id}")
+            {:ok, response}
+          
+          {:ok, %{status: status, body: body}} ->
+            Logger.error("Gmail watch setup failed: #{status} - #{inspect(body)}")
+            {:error, "Gmail API error: #{status}"}
+          
+          {:error, reason} ->
+            Logger.error("Failed to setup Gmail watch: #{inspect(reason)}")
+            {:error, "Network error: #{inspect(reason)}"}
+        end
+      
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
   
-  defp mock_stop_gmail_watch(user) do
-    # Mock implementation of Gmail watch stop
-    Logger.debug("Mock: Stopping Gmail watch for user #{user.id}")
+  defp stop_gmail_watch(user) do
+    # Real implementation of Gmail watch stop
+    Logger.debug("Stopping Gmail watch for user #{user.id}")
     
-    {:ok, %{status: "stopped"}}
+    case GmailAPI.get_access_token(user) do
+      {:ok, access_token} ->
+        url = "https://gmail.googleapis.com/gmail/v1/users/me/stop"
+        
+        headers = [
+          {"Authorization", "Bearer #{access_token}"},
+          {"Content-Type", "application/json"}
+        ]
+        
+        case Req.post(url, headers: headers, json: %{}) do
+          {:ok, %{status: 204}} ->
+            Logger.info("Successfully stopped Gmail watch for user #{user.id}")
+            {:ok, %{status: "stopped"}}
+          
+          {:ok, %{status: status, body: body}} ->
+            Logger.error("Gmail watch stop failed: #{status} - #{inspect(body)}")
+            {:error, "Gmail API error: #{status}"}
+          
+          {:error, reason} ->
+            Logger.error("Failed to stop Gmail watch: #{inspect(reason)}")
+            {:error, "Network error: #{inspect(reason)}"}
+        end
+      
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
   
   @doc """

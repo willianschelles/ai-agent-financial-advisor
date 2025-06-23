@@ -16,7 +16,7 @@ defmodule AiAgent.LLM.ToolCalling do
   alias AiAgent.LLM.Tools.CalendarTool
   alias AiAgent.LLM.Tools.EmailTool
   alias AiAgent.LLM.Tools.HubSpotTool
-  alias AiAgent.{User, WorkflowEngine, TaskManager}
+  alias AiAgent.{User, WorkflowEngine, TaskManager, SimpleWorkflowEngine}
 
   @openai_chat_url "https://api.openai.com/v1/chat/completions"
   @default_model "gpt-4o"
@@ -132,7 +132,7 @@ defmodule AiAgent.LLM.ToolCalling do
         {:ok, docs}
 
       {:error, reason} ->
-        Logger.warn("Failed to retrieve context: #{reason}")
+        Logger.warning("Failed to retrieve context: #{reason}")
         # Continue without context rather than failing
         {:ok, []}
     end
@@ -441,22 +441,28 @@ defmodule AiAgent.LLM.ToolCalling do
       if is_complex do
         true  # Complex requests need workflows
       else
-        # Only check for simple actions if no complex indicators were found
-        simple_action_patterns = [
-          ~r/^send (?:an? )?email to [^,]+ *$/i,  # Must not contain commas (which often indicate conditionals)
-          ~r/^email [^,]+ about [^,]+ *$/i,      # Must be simple, no conditionals
-          ~r/^schedule (?:a )?meeting with .+ (?:at|for) .+ *$/i,
-          ~r/^create (?:a )?calendar event .+ *$/i,
-          ~r/^add .+ to hubspot *$/i,
-          ~r/^send .+ (?:an? )?message *$/i
+        # Check for action-based requests that require tools/workflows
+        action_patterns = [
+          ~r/^send (?:an? )?email to .+/i,
+          ~r/^email .+ about .+/i,
+          ~r/^schedule (?:a )?meeting with .+/i,
+          ~r/^create (?:a )?calendar event .+/i,
+          ~r/^add .+ to hubspot/i,
+          ~r/^send .+ (?:an? )?message/i,
+          ~r/^create .+ contact/i,
+          ~r/^update .+ in hubspot/i,
+          ~r/^cancel .+ meeting/i,
+          ~r/^reschedule .+/i,
+          ~r/^delete .+/i,
+          ~r/^archive .+/i
         ]
         
-        is_simple_action = Enum.any?(simple_action_patterns, fn pattern ->
+        is_action_request = Enum.any?(action_patterns, fn pattern ->
           Regex.match?(pattern, question_lower)
         end)
         
-        # Return false for simple actions, true for everything else that's not simple
-        not is_simple_action
+        # Return true only for action requests, false for informational questions
+        is_action_request
       end
     end
   end
@@ -464,30 +470,77 @@ defmodule AiAgent.LLM.ToolCalling do
   defp handle_workflow_request(user, question, opts) do
     Logger.info("Handling workflow request for user #{user.id}")
     
-    # Create and execute workflow using the WorkflowEngine
-    case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
+    # Try the new simplified email->calendar workflow first
+    case SimpleWorkflowEngine.handle_email_calendar_request(user, question) do
       {:ok, result} ->
-        format_workflow_result(result, true)
-      
-      {:waiting, task} ->
-        Logger.info("Workflow created task #{task.id} and is waiting for external event")
+        # Email->calendar workflow handled successfully
         {:ok, %{
-          response: build_waiting_response(task),
+          response: result.message || "Email sent, waiting for reply to create calendar event",
           tools_used: [],
           context_used: [],
-          task: task,
+          task: nil,
           waiting: true,
           metadata: %{
+            workflow_type: "email_calendar",
             workflow_created: true,
-            task_id: task.id,
-            waiting_for: task.waiting_for
+            email_data: result[:email_data]
           }
         }}
       
+      {:not_email_calendar_workflow, _request} ->
+        # Not an email->calendar workflow, try the original workflow engine
+        case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
+          {:ok, result} ->
+            format_workflow_result(result, true)
+          
+          {:waiting, task} ->
+            Logger.info("Workflow created task #{task.id} and is waiting for external event")
+            {:ok, %{
+              response: build_waiting_response(task),
+              tools_used: [],
+              context_used: [],
+              task: task,
+              waiting: true,
+              metadata: %{
+                workflow_created: true,
+                task_id: task.id,
+                waiting_for: task.waiting_for
+              }
+            }}
+          
+          {:error, reason} ->
+            Logger.error("Workflow creation failed: #{reason}")
+            # Fallback to simple request handling
+            handle_simple_request(user, question, opts)
+        end
+      
       {:error, reason} ->
-        Logger.error("Workflow creation failed: #{reason}")
-        # Fallback to simple request handling
-        handle_simple_request(user, question, opts)
+        Logger.error("Simple workflow failed: #{reason}")
+        # Fallback to original workflow engine
+        case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
+          {:ok, result} ->
+            format_workflow_result(result, true)
+          
+          {:waiting, task} ->
+            Logger.info("Workflow created task #{task.id} and is waiting for external event")
+            {:ok, %{
+              response: build_waiting_response(task),
+              tools_used: [],
+              context_used: [],
+              task: task,
+              waiting: true,
+              metadata: %{
+                workflow_created: true,
+                task_id: task.id,
+                waiting_for: task.waiting_for
+              }
+            }}
+          
+          {:error, reason} ->
+            Logger.error("All workflow methods failed: #{reason}")
+            # Final fallback to simple request handling
+            handle_simple_request(user, question, opts)
+        end
     end
   end
   

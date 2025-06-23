@@ -1,0 +1,196 @@
+<div class="flex justify-between items-center mb-6">
+  <nav class="flex space-x-4">
+    <.link navigate="/chat" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+      Chat
+    </.link>
+    <.link navigate="/rules" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+      Proactive Rules
+    </.link>
+  </nav>
+  
+  <.form :let={f} method="delete" action="/logout" class="inline">
+    <button
+      type="submit"
+      class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+    >
+      Logout
+    </button>
+  </.form>
+</div>
+
+<div class="max-w-6xl mx-auto p-6">
+  <div class="flex justify-between items-center mb-8">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900">Proactive Rules</h1>
+      <p class="text-gray-600 mt-2">Set up automatic actions based on email, calendar, and CRM events</p>
+    </div>
+    <button 
+      phx-click="new_rule" 
+      class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
+    >
+      + New Rule
+    </button>
+  </div>
+
+  <!-- Rules List -->
+  <div class="space-y-6" :if={not @show_form}>
+    <%= if Enum.empty?(@rules) do %>
+      <div class="text-center py-12 bg-gray-50 rounded-lg">
+        <h3 class="text-lg font-medium text-gray-900 mb-2">No proactive rules yet</h3>
+        <p class="text-gray-600 mb-4">Create your first rule to automate actions based on events</p>
+        <button 
+          phx-click="new_rule" 
+          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
+        >
+          Create First Rule
+        </button>
+      </div>
+    <% else %>
+      <%= for rule <- @rules do %>
+        <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <div class="flex justify-between items-start mb-4">
+            <div class="flex-1">
+              <div class="flex items-center gap-3 mb-2">
+                <h3 class="text-lg font-semibold text-gray-900"><%= rule.name %></h3>
+                <span class={"px-2 py-1 rounded-full text-xs font-medium #{if rule.is_active, do: "bg-green-100 text-green-800", else: "bg-gray-100 text-gray-800"}"}>
+                  <%= if rule.is_active, do: "Active", else: "Inactive" %>
+                </span>
+              </div>
+              <p class="text-gray-600 mb-3"><%= rule.description %></p>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                <span class="flex items-center gap-1">
+                  <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <%= format_trigger_type(rule.trigger_type) %>
+                </span>
+                <span>Created <%= Calendar.strftime(rule.inserted_at, "%b %d, %Y") %></span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button 
+                phx-click="toggle_rule" 
+                phx-value-id={rule.id}
+                class={"px-3 py-1 rounded text-sm font-medium #{if rule.is_active, do: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200", else: "bg-green-100 text-green-800 hover:bg-green-200"}"}
+              >
+                <%= if rule.is_active, do: "Disable", else: "Enable" %>
+              </button>
+              <button 
+                phx-click="edit_rule" 
+                phx-value-id={rule.id}
+                class="px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-medium hover:bg-gray-200"
+              >
+                Edit
+              </button>
+              <button 
+                phx-click="delete_rule" 
+                phx-value-id={rule.id}
+                phx-confirm="Are you sure you want to delete this rule?"
+                class="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-medium hover:bg-red-200"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          
+          <!-- Rule Details -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+            <div>
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Trigger Conditions</h4>
+              <pre class="text-xs bg-gray-50 p-3 rounded border overflow-x-auto"><%= Jason.encode!(rule.trigger_conditions || %{}, pretty: true) %></pre>
+            </div>
+            <div>
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Actions</h4>
+              <pre class="text-xs bg-gray-50 p-3 rounded border overflow-x-auto"><%= Jason.encode!(rule.actions || %{}, pretty: true) %></pre>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+
+  <!-- Rule Form -->
+  <div :if={@show_form} class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="text-xl font-semibold text-gray-900">
+        <%= if @current_rule, do: "Edit Rule", else: "Create New Rule" %>
+      </h2>
+      <button phx-click="cancel_form" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <.form for={@form} phx-submit="save_rule" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <.input field={@form[:name]} label="Rule Name" placeholder="e.g., Auto-add email contacts to HubSpot" />
+        </div>
+        <div>
+          <.input 
+            field={@form[:trigger_type]} 
+            type="select" 
+            label="Trigger Type" 
+            options={Enum.map(ProactiveRule.trigger_types(), &{format_trigger_type(&1), &1})}
+            phx-change="update_conditions"
+          />
+        </div>
+      </div>
+
+      <div>
+        <.input field={@form[:description]} type="textarea" label="Description" placeholder="Describe what this rule does..." />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Trigger Conditions (JSON)
+          </label>
+          <.input 
+            field={@form[:trigger_conditions]} 
+            type="textarea" 
+            rows="8"
+            placeholder={get_example_conditions(@form[:trigger_type].value || "email_received")}
+          />
+          <p class="text-xs text-gray-500 mt-1">
+            Define conditions that must be met for this rule to trigger. Use JSON format.
+          </p>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Actions (JSON)
+          </label>
+          <.input 
+            field={@form[:actions]} 
+            type="textarea" 
+            rows="8"
+            placeholder={get_example_actions(@form[:trigger_type].value || "email_received")}
+          />
+          <p class="text-xs text-gray-500 mt-1">
+            Define actions to execute when conditions are met. Use JSON format.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center">
+        <.input field={@form[:is_active]} type="checkbox" label="Activate this rule immediately" />
+      </div>
+
+      <div class="flex justify-end gap-3 pt-6 border-t border-gray-100">
+        <button 
+          type="button" 
+          phx-click="cancel_form"
+          class="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button 
+          type="submit"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <%= if @current_rule, do: "Update Rule", else: "Create Rule" %>
+        </button>
+      </div>
+    </.form>
+  </div>
+</div>
