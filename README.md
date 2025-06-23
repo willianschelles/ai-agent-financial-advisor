@@ -800,7 +800,9 @@ defmodule AiAgent.Integrations.Hubspot do
   end
 end
 
-# --- Fly.io Deployment Steps ---
+# --- Deployment Options ---
+
+## Fly.io Deployment Steps
 # In terminal:
 # 1. Install Fly CLI: https://fly.io/docs/hands-on/install-flyctl/
 # 2. Authenticate:
@@ -812,7 +814,17 @@ end
 # 5. Build & Deploy:
 #    fly deploy
 
-# --- fly.toml Example ---
+## Render Deployment
+# For detailed instructions on deploying to Render, see the RENDER_DEPLOYMENT.md file.
+# Render deployment includes:
+# - Automatic PostgreSQL setup with pgvector
+# - OAuth configuration
+# - Environment variables management
+# - Build and release process
+
+# --- Deployment Configuration Examples ---
+
+## fly.toml Example
 [app]
 name = "ai-agent-finance"
 
