@@ -41,10 +41,6 @@ defmodule HubspotAuth.HubspotStrategy do
     |> redirect!(apply(option(conn, :oauth2_module), :authorize_url!, [opts]))
   end
 
-  def handle_callback!(conn, params) do
-    conn
-  end
-
   def handle_callback!(%Plug.Conn{params: %{"code" => code, "state" => state}} = conn) do
     # Retrieve the stored state from the session
     stored_state = get_session(conn, "ueberauth.state_param")
@@ -63,6 +59,10 @@ defmodule HubspotAuth.HubspotStrategy do
           set_errors!(conn, [error("token_fetch", reason)])
       end
     end
+  end
+
+  def handle_callback!(conn, _params) do
+    set_errors!(conn, [error("missing_code", "No authorization code received")])
   end
 
   defp generate_state, do: 16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)

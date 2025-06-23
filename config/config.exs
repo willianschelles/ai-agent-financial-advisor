@@ -104,7 +104,7 @@ config :ueberauth, HubspotAuth.HubspotOAuth,
   client_id: System.get_env("HUBSPOT_CLIENT_ID"),
   client_secret: System.get_env("HUBSPOT_CLIENT_SECRET"),
   redirect_uri: System.get_env("HUBSPOT_REDIRECT_URI") ||
-                    "http://localhost:4000/auth/hubspot/callback",
+                   "http://localhost:4000/auth/hubspot/callback",
   site: "https://api.hubapi.com",
   authorize_url: "https://app.hubspot.com/oauth/authorize",
   token_url: "https://api.hubapi.com/oauth/v1/token"
