@@ -30,11 +30,11 @@ defmodule HubspotAuth.HubspotStrategy do
     # Store the state in the session
     conn
     |> put_session("ueberauth.state_param", state)
-    # Set cookie explicitly
+    # Set cookie explicitly (secure: true for production HTTPS)
     |> put_resp_cookie("ueberauth.state_param", state,
       http_only: true,
       same_site: "Lax",
-      secure: false
+      secure: Application.get_env(:ai_agent, AiAgentWeb.Endpoint)[:url][:scheme] == "https"
     )
     # Force session save
     |> configure_session(save: :always)
