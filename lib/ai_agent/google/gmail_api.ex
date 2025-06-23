@@ -31,9 +31,6 @@ defmodule AiAgent.Google.GmailAPI do
           {:ok, raw_message} ->
             url = "#{@base_url}/users/me/messages/send"
 
-            access_token =
-              "ya29.a0AW4Xtxgv8rtajpGRqd7kWbh8fDLlUtJTB5H6rqiq0TUY7WMT3USI1RQwhP4jS7bNMzA4hLEKi7TczSCSYo3TGMgUq__9FxIYtFfxo39U6O7tcIwgxN7U7Yotoe3o2T4s0WcSEc4ZwM9QMxi-YkUOL6dYQm9yeWU_laB6uaQraCgYKAVkSARISFQHGX2MiHsFP-DQTxCBUfw66oU5Mvw0175"
-
             headers = [
               {"Authorization", "Bearer #{access_token}"},
               {"Content-Type", "application/json"}
@@ -46,7 +43,6 @@ defmodule AiAgent.Google.GmailAPI do
             Logger.debug("Sending email via Gmail API")
 
             IO.inspect(access_token, label: "Access Token")
-
             case Req.post(url, headers: headers, json: payload) do
               {:ok, %{status: 200, body: message}} ->
                 Logger.info("Successfully sent email: #{message["id"]}")
@@ -93,11 +89,10 @@ defmodule AiAgent.Google.GmailAPI do
         ]
 
         # Build query parameters
-        query_params =
-          params
-          |> Map.take([:q, :maxResults, :pageToken, :labelIds, :includeSpamTrash])
-          |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-          |> Enum.into(%{})
+        query_params = params
+        |> Map.take([:q, :maxResults, :pageToken, :labelIds, :includeSpamTrash])
+        |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+        |> Enum.into(%{})
 
         Logger.debug("Fetching messages with params: #{inspect(query_params)}")
 
@@ -224,38 +219,33 @@ defmodule AiAgent.Google.GmailAPI do
         "To: #{Enum.join(to_addresses, ", ")}"
       ]
 
-      headers =
-        if Enum.empty?(cc_addresses) do
-          headers
-        else
-          headers ++ ["Cc: #{Enum.join(cc_addresses, ", ")}"]
-        end
+      headers = if Enum.empty?(cc_addresses) do
+        headers
+      else
+        headers ++ ["Cc: #{Enum.join(cc_addresses, ", ")}"]
+      end
 
-      headers =
-        if Enum.empty?(bcc_addresses) do
-          headers
-        else
-          headers ++ ["Bcc: #{Enum.join(bcc_addresses, ", ")}"]
-        end
+      headers = if Enum.empty?(bcc_addresses) do
+        headers
+      else
+        headers ++ ["Bcc: #{Enum.join(bcc_addresses, ", ")}"]
+      end
 
-      headers =
-        headers ++
-          [
-            "Subject: #{subject}",
-            "Content-Type: text/plain; charset=UTF-8",
-            ""
-          ]
+      headers = headers ++ [
+        "Subject: #{subject}",
+        "Content-Type: text/plain; charset=UTF-8",
+        ""
+      ]
 
       # Combine headers and body
       email_content = Enum.join(headers, "\r\n") <> "\r\n" <> body
 
       # Base64 encode the email (URL-safe)
-      encoded_email =
-        email_content
-        |> Base.encode64()
-        |> String.replace("+", "-")
-        |> String.replace("/", "_")
-        |> String.replace("=", "")
+      encoded_email = email_content
+      |> Base.encode64()
+      |> String.replace("+", "-")
+      |> String.replace("/", "_")
+      |> String.replace("=", "")
 
       {:ok, encoded_email}
     end
@@ -271,12 +261,11 @@ defmodule AiAgent.Google.GmailAPI do
     thread_id = original_message["threadId"]
 
     # Build reply subject
-    reply_subject =
-      if String.starts_with?(original_subject, "Re:") do
-        original_subject
-      else
-        "Re: #{original_subject}"
-      end
+    reply_subject = if String.starts_with?(original_subject, "Re:") do
+      original_subject
+    else
+      "Re: #{original_subject}"
+    end
 
     # Determine reply recipients
     # Reply to sender, and include original To/Cc if they were part of the conversation
@@ -311,9 +300,7 @@ defmodule AiAgent.Google.GmailAPI do
     email_regex = ~r/<([^>]+)>/
 
     case Regex.run(email_regex, header_value) do
-      [_, email] ->
-        email
-
+      [_, email] -> email
       _ ->
         # If no angle brackets, check if the whole string is an email
         if String.contains?(header_value, "@") do

@@ -30,6 +30,14 @@ defmodule AiAgentWeb.Router do
     live("/chat", ChatLive)
   end
 
+
+  # /auth/google or /auth/hubspot
+  scope "/auth", AiAgentWeb do
+    pipe_through(:browser)
+
+    get("/google", AuthController, :request)
+    get("/google/callback", AuthController, :callback)
+  end
   # /auth/google or /auth/hubspot
   scope "/auth", AiAgentWeb do
     pipe_through([:browser, :browser_auth])
@@ -38,9 +46,20 @@ defmodule AiAgentWeb.Router do
     get("/:provider/callback", AuthController, :callback)
   end
 
+
   pipeline :browser_auth do
     plug(:fetch_session)
     plug(AiAgentWeb.Plugs.Auth)
+  end
+
+  # Webhook endpoints for external services
+  scope "/webhooks", AiAgentWeb do
+    pipe_through(:api)
+
+    post("/gmail", WebhookController, :gmail)
+    post("/calendar", WebhookController, :calendar)
+    post("/hubspot", WebhookController, :hubspot)
+    post("/generic", WebhookController, :generic)
   end
 
   # Other scopes may use custom stacks.

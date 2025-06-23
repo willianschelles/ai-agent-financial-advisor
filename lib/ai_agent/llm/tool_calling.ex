@@ -16,30 +16,33 @@ defmodule AiAgent.LLM.ToolCalling do
   alias AiAgent.LLM.Tools.CalendarTool
   alias AiAgent.LLM.Tools.EmailTool
   alias AiAgent.LLM.Tools.HubSpotTool
-  alias AiAgent.User
+  alias AiAgent.{User, WorkflowEngine, TaskManager}
 
   @openai_chat_url "https://api.openai.com/v1/chat/completions"
   @default_model "gpt-4o"
   @default_max_tokens 1000
 
   @doc """
-  Enhanced RAG query with tool calling capabilities.
+  Enhanced RAG query with tool calling and task memory capabilities.
 
-  This function extends the basic RAG system to include tool execution when the AI
-  determines that an action needs to be performed.
+  This function extends the basic RAG system to include tool execution and persistent
+  task tracking for multi-step workflows. It can create tasks for complex requests
+  that may require waiting for external events.
 
   ## Parameters
   - user: User struct
   - question: User's query/request
   - opts: Options map with keys:
     - :enable_tools - Whether to enable tool calling (default: true)
+    - :enable_workflows - Whether to enable workflow creation (default: true)
     - :model - OpenAI model to use
     - :max_tokens - Maximum response tokens
     - :context_limit - Number of context documents to retrieve
     - :similarity_threshold - Similarity threshold for context retrieval
+    - :task_id - ID of existing task to continue (optional)
 
   ## Returns
-  - {:ok, %{response: string, tools_used: [actions], context_used: [docs]}} on success
+  - {:ok, %{response: string, tools_used: [actions], context_used: [docs], task: task}} on success
   - {:error, reason} on failure
 
   ## Examples
@@ -47,32 +50,30 @@ defmodule AiAgent.LLM.ToolCalling do
       iex> AiAgent.LLM.ToolCalling.ask_with_tools(user, "Who mentioned baseball?")
       {:ok, %{response: "John mentioned...", tools_used: [], context_used: [...]}}
       
-      # Action request (tools will be used)
-      iex> AiAgent.LLM.ToolCalling.ask_with_tools(user, "Schedule a meeting with John tomorrow at 2pm")
-      {:ok, %{response: "I've scheduled...", tools_used: [%{tool: "calendar", action: "create_event"}], context_used: [...]}}
+      # Multi-step action (creates workflow)
+      iex> AiAgent.LLM.ToolCalling.ask_with_tools(user, "Schedule a meeting with John tomorrow at 2pm and send him a follow-up email")
+      {:ok, %{response: "I've started...", tools_used: [...], task: %Task{...}}}
   """
   def ask_with_tools(user, question, opts \\ %{}) when is_binary(question) do
     Logger.info("Tool-enabled query from user #{user.id}: #{String.slice(question, 0, 100)}...")
 
     enable_tools = Map.get(opts, :enable_tools, true)
-    model = Map.get(opts, :model, @default_model)
-    max_tokens = Map.get(opts, :max_tokens, @default_max_tokens)
-    context_limit = Map.get(opts, :context_limit, 5)
-    similarity_threshold = Map.get(opts, :similarity_threshold, 0.3)
-
-    with {:ok, context_docs} <-
-           get_relevant_context(user, question, context_limit, similarity_threshold),
-         {:ok, result} <-
-           process_with_tools(user, question, context_docs, enable_tools, model, max_tokens) do
-      Logger.info(
-        "Tool-enabled query completed. Used #{length(result.tools_used)} tools, #{length(result.context_used)} context docs."
-      )
-
-      {:ok, result}
-    else
-      {:error, reason} ->
-        Logger.error("Tool-enabled query failed: #{inspect(reason)}")
-        {:error, reason}
+    enable_workflows = Map.get(opts, :enable_workflows, true)
+    task_id = Map.get(opts, :task_id)
+    
+    # Check if this is continuing an existing task
+    case task_id do
+      nil ->
+        # New request - determine if it needs a workflow
+        if enable_workflows and is_complex_request?(question) do
+          handle_workflow_request(user, question, opts)
+        else
+          handle_simple_request(user, question, opts)
+        end
+      
+      task_id when is_integer(task_id) ->
+        # Continue existing task
+        continue_existing_task(user, task_id, question, opts)
     end
   end
 
@@ -231,8 +232,9 @@ defmodule AiAgent.LLM.ToolCalling do
     4. Maintain professional tone appropriate for a financial advisor's assistant
 
     Guidelines for tool usage:
-    - Only use tools when the user explicitly requests an action
-    - Always confirm the action before executing (unless user specifically says to proceed)
+    - When the user requests an action, execute it directly using tools
+    - For email requests: use email_send to send emails immediately, don't draft unless explicitly asked
+    - For calendar requests: create events immediately when requested
     - If you need more information to complete an action, ask for clarification
     - When scheduling meetings, try to find contact information from the provided context
     - When sending emails, use professional language appropriate for financial services
@@ -398,4 +400,260 @@ defmodule AiAgent.LLM.ToolCalling do
   defp get_openai_key do
     System.get_env("OPENAI_API_KEY")
   end
+  
+  # New workflow and task handling functions
+  
+  defp is_complex_request?(question) do
+    question_lower = String.downcase(question)
+    
+    # Skip analysis prompts and internal system prompts
+    analysis_indicators = [
+      "analyze this", "provide a json response", "determine the next steps",
+      "extract recipient information", "original request:", "completed steps:"
+    ]
+    
+    is_analysis_prompt = Enum.any?(analysis_indicators, fn indicator ->
+      String.contains?(question_lower, indicator)
+    end)
+    
+    if is_analysis_prompt do
+      false
+    else
+      # First check for indicators of complex, multi-step requests
+      multi_step_indicators = [
+        " and ", " then ", " after ", " following ", " once ", " when ",
+        " if ", " unless ", " provided ", " assuming ",
+        "schedule.*send", "send.*schedule", "create.*notify", "notify.*create",
+        "wait for", "follow up", "remind me", "check back",
+        "if.*accepts", "if.*confirms", "if.*agrees", "if.*available"
+      ]
+      
+      is_complex = Enum.any?(multi_step_indicators, fn indicator ->
+        # Check if it's a regex pattern (contains *)
+        if String.contains?(indicator, "*") do
+          regex_pattern = String.replace(indicator, "*", ".*")
+          Regex.match?(~r/#{regex_pattern}/i, question_lower)
+        else
+          String.contains?(question_lower, indicator)
+        end
+      end)
+      
+      if is_complex do
+        true  # Complex requests need workflows
+      else
+        # Only check for simple actions if no complex indicators were found
+        simple_action_patterns = [
+          ~r/^send (?:an? )?email to [^,]+ *$/i,  # Must not contain commas (which often indicate conditionals)
+          ~r/^email [^,]+ about [^,]+ *$/i,      # Must be simple, no conditionals
+          ~r/^schedule (?:a )?meeting with .+ (?:at|for) .+ *$/i,
+          ~r/^create (?:a )?calendar event .+ *$/i,
+          ~r/^add .+ to hubspot *$/i,
+          ~r/^send .+ (?:an? )?message *$/i
+        ]
+        
+        is_simple_action = Enum.any?(simple_action_patterns, fn pattern ->
+          Regex.match?(pattern, question_lower)
+        end)
+        
+        # Return false for simple actions, true for everything else that's not simple
+        not is_simple_action
+      end
+    end
+  end
+  
+  defp handle_workflow_request(user, question, opts) do
+    Logger.info("Handling workflow request for user #{user.id}")
+    
+    # Create and execute workflow using the WorkflowEngine
+    case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
+      {:ok, result} ->
+        format_workflow_result(result, true)
+      
+      {:waiting, task} ->
+        Logger.info("Workflow created task #{task.id} and is waiting for external event")
+        {:ok, %{
+          response: build_waiting_response(task),
+          tools_used: [],
+          context_used: [],
+          task: task,
+          waiting: true,
+          metadata: %{
+            workflow_created: true,
+            task_id: task.id,
+            waiting_for: task.waiting_for
+          }
+        }}
+      
+      {:error, reason} ->
+        Logger.error("Workflow creation failed: #{reason}")
+        # Fallback to simple request handling
+        handle_simple_request(user, question, opts)
+    end
+  end
+  
+  defp handle_simple_request(user, question, opts) do
+    Logger.debug("Handling simple request for user #{user.id}")
+    
+    model = Map.get(opts, :model, @default_model)
+    max_tokens = Map.get(opts, :max_tokens, @default_max_tokens)
+    context_limit = Map.get(opts, :context_limit, 5)
+    similarity_threshold = Map.get(opts, :similarity_threshold, 0.3)
+    enable_tools = Map.get(opts, :enable_tools, true)
+
+    with {:ok, context_docs} <-
+           get_relevant_context(user, question, context_limit, similarity_threshold),
+         {:ok, result} <-
+           process_with_tools(user, question, context_docs, enable_tools, model, max_tokens) do
+      
+      # Add task field for consistency
+      enhanced_result = Map.put(result, :task, nil)
+      
+      Logger.info(
+        "Simple request completed. Used #{length(result.tools_used)} tools, #{length(result.context_used)} context docs."
+      )
+
+      {:ok, enhanced_result}
+    else
+      {:error, reason} ->
+        Logger.error("Simple request failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+  
+  defp continue_existing_task(user, task_id, question, opts) do
+    Logger.info("Continuing existing task #{task_id} for user #{user.id}")
+    
+    case TaskManager.get_task(task_id) do
+      {:ok, task} ->
+        if task.user_id == user.id do
+          # Update task with new input and continue workflow
+          case WorkflowEngine.execute_workflow(task, user, Map.put(opts, :user_input, question)) do
+            {:ok, result} ->
+              format_workflow_result(result, false)
+            
+            {:waiting, updated_task} ->
+              {:ok, %{
+                response: build_waiting_response(updated_task),
+                tools_used: [],
+                context_used: [],
+                task: updated_task,
+                waiting: true,
+                metadata: %{
+                  task_continued: true,
+                  task_id: updated_task.id,
+                  waiting_for: updated_task.waiting_for
+                }
+              }}
+            
+            {:error, reason} ->
+              Logger.error("Failed to continue task #{task_id}: #{reason}")
+              {:error, reason}
+          end
+        else
+          Logger.error("User #{user.id} attempted to access task #{task_id} belonging to user #{task.user_id}")
+          {:error, "Task not found or access denied"}
+        end
+      
+      {:error, :not_found} ->
+        Logger.error("Task #{task_id} not found")
+        {:error, "Task not found"}
+      
+      {:error, reason} ->
+        Logger.error("Failed to retrieve task #{task_id}: #{reason}")
+        {:error, reason}
+    end
+  end
+  
+  defp format_workflow_result(result, is_new_workflow) do
+    # Format workflow engine results to match tool calling interface
+    case result do
+      %{message: message, details: details} ->
+        {:ok, %{
+          response: message,
+          tools_used: extract_tools_from_details(details),
+          context_used: [],
+          task: nil,
+          metadata: %{
+            workflow_completed: true,
+            is_new_workflow: is_new_workflow,
+            details: details
+          }
+        }}
+      
+      %{message: message} ->
+        {:ok, %{
+          response: message,
+          tools_used: [],
+          context_used: [],
+          task: nil,
+          metadata: %{
+            workflow_completed: true,
+            is_new_workflow: is_new_workflow
+          }
+        }}
+      
+      _ ->
+        {:ok, %{
+          response: "Workflow completed successfully",
+          tools_used: [],
+          context_used: [],
+          task: nil,
+          metadata: %{
+            workflow_completed: true,
+            is_new_workflow: is_new_workflow,
+            raw_result: result
+          }
+        }}
+    end
+  end
+  
+  defp build_waiting_response(task) do
+    case task.waiting_for do
+      "email_reply" ->
+        "I've sent the email and I'm now waiting for a reply. I'll automatically continue when a response is received."
+      
+      "calendar_response" ->
+        "I've created the calendar event and sent invitations. I'm waiting for attendee responses."
+      
+      "external_approval" ->
+        "The request has been submitted for approval. I'll continue when approval is received."
+      
+      "scheduled_time" ->
+        scheduled_time = task.scheduled_for |> DateTime.to_string()
+        "This task is scheduled to continue at #{scheduled_time}."
+      
+      "user_input" ->
+        "I need additional information from you to continue. Please provide the requested details."
+      
+      _ ->
+        "The task is waiting for an external event to continue. I'll automatically resume when the event occurs."
+    end
+  end
+  
+  defp extract_tools_from_details(details) when is_map(details) do
+    # Extract tool usage information from workflow details
+    tools_used = []
+    
+    # Check for various tool indicators in the details
+    tools_used = if Map.has_key?(details, :message_id) do
+      [%{tool: "email", function: "send", success: true, result: details} | tools_used]
+    else
+      tools_used
+    end
+    
+    tools_used = if Map.has_key?(details, :event_id) do
+      [%{tool: "calendar", function: "create_event", success: true, result: details} | tools_used]
+    else
+      tools_used
+    end
+    
+    tools_used = if Map.has_key?(details, :contact_id) or Map.has_key?(details, :deal_id) do
+      [%{tool: "hubspot", function: "create", success: true, result: details} | tools_used]
+    else
+      tools_used
+    end
+    
+    tools_used
+  end
+  defp extract_tools_from_details(_), do: []
 end

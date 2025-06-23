@@ -35,11 +35,12 @@ defmodule AiAgentWeb.AuthController do
         conn
         |> put_session(:user_id, user.id)
         |> configure_session(renew: true)
-        |> redirect(to: "/auth/hubspot")
+        |> redirect(to: "/chat")
 
       {:error, reason} ->
         conn
         |> put_flash(:error, "Google login failed: #{reason}")
+        |> IO.inspect(label: "Google Auth Error")
         |> redirect(to: "/login")
     end
   end
