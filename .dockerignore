@@ -1,0 +1,49 @@
+# Elixir-specific ignores
+/_build/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+.DS_Store
+
+# Mix artifact files
+ai_agent-*.tar
+priv/static/assets/
+priv/static/cache_manifest.json
+
+# Temporary files
+/tmp/
+.elixir_ls/
+
+# Git directory
+.git/
+.gitignore
+
+# Testing/CI/development artifacts
+test/
+coverage/
+.circleci/
+.github/
+
+# Environment variables files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Docker files (avoid recursive copying)
+Dockerfile
+.dockerignore
+fly.toml
+
+# Editor configuration
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Node modules (if any)
+/assets/node_modules/

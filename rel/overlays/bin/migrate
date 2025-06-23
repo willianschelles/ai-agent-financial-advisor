@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+echo "========= DATABASE CONNECTION INFORMATION ========="
+echo "Attempting to connect to database..."
+echo "DATABASE_URL env var exists: $(if [ -n "$DATABASE_URL" ]; then echo "YES"; else echo "NO"; fi)"
+echo "DATABASE_URL value (masked): $(echo $DATABASE_URL | sed 's/[^@]*@/@/g')"
+echo "=================================================="
+
+echo "Running migrations"
+/app/bin/ai_agent eval "IO.puts(\"Database URL: #{System.get_env(\"DATABASE_URL\") |> String.replace(~r/[^@]*@/, \"@\")}\")"
+/app/bin/ai_agent eval "IO.puts(\"Hostname resolution test:\")"
+/app/bin/ai_agent eval ":inet.gethostbyname(String.to_charlist(URI.parse(System.get_env(\"DATABASE_URL\")).host)) |> IO.inspect()"
+/app/bin/ai_agent eval "AiAgent.Release.migrate"

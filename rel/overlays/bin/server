@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+# Set environment variables from Fly.io secrets if they exist
+if [ -d /run/secrets ]; then
+  for secret in /run/secrets/*; do
+    name=$(basename "$secret")
+    export "$name"="$(cat "$secret")"
+  done
+fi
+
+# Ensure migrations run before starting the application
+/app/bin/migrate
+
+# Start the Phoenix server
+exec /app/bin/ai_agent start
