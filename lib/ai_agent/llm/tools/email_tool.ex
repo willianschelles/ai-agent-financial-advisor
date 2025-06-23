@@ -38,7 +38,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
               },
               subject: %{
                 type: "string",
-                description: "Professional email subject line. Should be clear, concise, and business-appropriate. Examples: 'Meeting Request - Tomorrow at 2pm', 'Investment Portfolio Review', 'Following Up on Our Discussion'. Avoid literal descriptions of the request."
+                description: "CRITICAL: Generate ONLY the core topic as the subject line. Extract the main subject/project/topic from the user's request and use ONLY that. DO NOT include words like 'send', 'email', 'about', 'to', or the recipient's name. Examples: User says 'send email to John about Avenue Connection' → Subject: 'Avenue Connection'. User says 'email Sarah about quarterly review' → Subject: 'Quarterly Review'. User says 'send meeting request to Mike about project update' → Subject: 'Project Update'. NEVER use phrases like 'send an email about X' or 'email about Y'. Use only the core business topic in 1-4 words maximum."
               },
               body: %{
                 type: "string",

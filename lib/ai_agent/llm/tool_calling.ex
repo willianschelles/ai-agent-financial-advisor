@@ -238,7 +238,7 @@ defmodule AiAgent.LLM.ToolCalling do
     - If you need more information to complete an action, ask for clarification
     - When scheduling meetings, try to find contact information from the provided context
     - When sending emails, use professional language appropriate for financial services
-    - For email subjects: Create clear, professional subjects that summarize the purpose (e.g., "Meeting Request - Tomorrow at 2pm", "Portfolio Review Discussion", "Following Up on Investment Strategy"). Avoid literal descriptions like "send an email to..."
+    - For email subjects: EXTRACT ONLY THE CORE TOPIC. Never include action words like 'send', 'email', 'about', 'to' or recipient names. Examples: 'send email to John about Avenue Connection' → Subject: 'Avenue Connection'. 'email Mike about quarterly results' → Subject: 'Quarterly Results'. 'send meeting request about project status' → Subject: 'Project Status'. BAD examples to avoid: 'Email about X', 'Send email about Y', 'Meeting request about Z'. Use 1-4 words maximum focusing only on the business topic.
 
     Guidelines for responses:
     - Be concise but thorough
