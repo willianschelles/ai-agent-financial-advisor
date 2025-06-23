@@ -11,6 +11,7 @@ defmodule AiAgentWeb.AuthController do
 
   def callback(%{assigns: %{ueberauth_auth: auth}} = conn, _params) do
     Logger.info("[AuthController] Received auth: #{inspect(auth)}")
+    IO.puts("dilma and themer")
 
     case auth.provider do
       :google ->

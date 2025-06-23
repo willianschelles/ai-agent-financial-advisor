@@ -1,1022 +1,454 @@
 defmodule AiAgent.WorkflowEngine do
   @moduledoc """
-  Workflow engine for executing multi-step tasks and managing complex business processes.
+  Dynamic workflow engine that intelligently handles complex multi-step processes.
 
-  This module orchestrates the execution of tasks that may involve multiple tools,
-  waiting periods, and conditional logic. It maintains state across sessions and
-  can resume work when external events occur.
+  This engine analyzes user requests naturally and creates appropriate workflows
+  without rigid patterns. It adapts to different business scenarios and uses
+  available context to enhance interactions.
   """
 
   require Logger
-
-  alias AiAgent.{TaskManager, Task}
-  alias AiAgent.LLM.ToolCalling
+  alias AiAgent.{TaskManager, LLM.ToolCalling}
 
   @doc """
-  Execute a workflow for a given task.
-
-  ## Parameters
-  - task: Task struct to execute
-  - user: User struct
-  - opts: Execution options
-
-  ## Returns
-  - {:ok, result} if workflow completed successfully
-  - {:waiting, task} if workflow is waiting for external event
-  - {:error, reason} if workflow failed
-  """
-  def execute_workflow(%Task{} = task, user, opts \\ %{}) do
-    Logger.info("Executing workflow for task #{task.id} (#{task.task_type})")
-
-    case task.task_type do
-      "email_workflow" -> execute_email_workflow(task, user, opts)
-      "calendar_workflow" -> execute_calendar_workflow(task, user, opts)
-      "hubspot_workflow" -> execute_hubspot_workflow(task, user, opts)
-      "multi_step_action" -> execute_multi_step_workflow(task, user, opts)
-      "composite_task" -> execute_composite_workflow(task, user, opts)
-      _ -> execute_generic_workflow(task, user, opts)
-    end
-  end
-
-  @doc """
-  Resume a waiting workflow when an external event occurs.
-
-  ## Parameters
-  - task: Task that was waiting
-  - event_type: Type of event that occurred
-  - event_data: Data from the external event
-  - user: User struct
-
-  ## Returns
-  - {:ok, result} if workflow completed after resumption
-  - {:waiting, task} if workflow is still waiting for another event
-  - {:error, reason} if resumption failed
-  """
-  def resume_workflow(%Task{} = task, event_type, event_data, user) do
-    Logger.info("Resuming workflow for task #{task.id} due to #{event_type}")
-
-    # Resume the task in the database
-    case TaskManager.resume_task(task.id, %{event_type: event_type, data: event_data}) do
-      {:ok, resumed_task} ->
-        # Continue executing the workflow from where it left off
-        execute_workflow(resumed_task, user, %{resuming: true, event_data: event_data})
-
-      {:error, reason} ->
-        Logger.error("Failed to resume task #{task.id}: #{reason}")
-        {:error, reason}
-    end
-  end
-
-  @doc """
-  Create and execute a workflow from a user request.
-
-  This is the main entry point for new workflow requests.
+  Create and execute a workflow based on user request.
   """
   def create_and_execute_workflow(user, request, opts \\ %{}) do
-    Logger.info("Creating and executing workflow for user #{user.id}")
-
-    # Determine workflow type based on request content
-    workflow_type = determine_workflow_type(request)
-
-    # Create the task
-    case TaskManager.create_task(user, request, workflow_type, opts) do
-      {:ok, task} ->
-        # Mark task as in progress
-        {:ok, task} = TaskManager.update_task_status(task.id, "in_progress")
-
-        # Execute the workflow
-        execute_workflow(task, user, opts)
-
-      {:error, reason} ->
-        Logger.error("Failed to create workflow task: #{inspect(reason)}")
-        {:error, reason}
-    end
-  end
-
-  # Email workflow execution
-  defp execute_email_workflow(task, user, opts) do
-    Logger.debug("Executing email workflow for task #{task.id}")
-
-    workflow_state = task.workflow_state
-    next_step = task.next_step || "analyze_request"
-
-    case next_step do
-      "analyze_request" ->
-        analyze_email_request(task, user, opts)
-
-      "find_recipients" ->
-        find_email_recipients(task, user, opts)
-
-      "draft_email" ->
-        draft_email_content(task, user, opts)
-
-      "send_email" ->
-        send_email_step(task, user, opts)
-
-      "wait_for_reply" ->
-        wait_for_email_reply(task, user, opts)
-
-      "process_reply" ->
-        process_email_reply(task, user, opts)
-
-      "create_calendar_event" ->
-        create_conditional_calendar_event(task, user, opts)
-
-      _ ->
-        Logger.error("Unknown email workflow step: #{next_step}")
-        {:error, "Unknown workflow step"}
-    end
-  end
-
-  # Calendar workflow execution
-  defp execute_calendar_workflow(task, user, opts) do
-    Logger.debug("Executing calendar workflow for task #{task.id}")
-
-    next_step = task.next_step || "analyze_request"
-
-    case next_step do
-      "analyze_request" ->
-        analyze_calendar_request(task, user, opts)
-
-      "find_participants" ->
-        find_meeting_participants(task, user, opts)
-
-      "find_available_time" ->
-        find_available_time_slots(task, user, opts)
-
-      "create_event" ->
-        create_calendar_event(task, user, opts)
-
-      "send_invitations" ->
-        send_calendar_invitations(task, user, opts)
-
-      "wait_for_responses" ->
-        wait_for_calendar_responses(task, user, opts)
-
-      "process_responses" ->
-        process_calendar_responses(task, user, opts)
-
-      _ ->
-        Logger.error("Unknown calendar workflow step: #{next_step}")
-        {:error, "Unknown workflow step"}
-    end
-  end
-
-  # HubSpot workflow execution
-  defp execute_hubspot_workflow(task, user, opts) do
-    Logger.debug("Executing HubSpot workflow for task #{task.id}")
-
-    next_step = task.next_step || "analyze_request"
-
-    case next_step do
-      "analyze_request" ->
-        analyze_hubspot_request(task, user, opts)
-
-      "find_contacts" ->
-        find_hubspot_contacts(task, user, opts)
-
-      "create_contact" ->
-        create_hubspot_contact(task, user, opts)
-
-      "add_notes" ->
-        add_hubspot_notes(task, user, opts)
-
-      "create_deal" ->
-        create_hubspot_deal(task, user, opts)
-
-      "schedule_follow_up" ->
-        schedule_hubspot_follow_up(task, user, opts)
-
-      _ ->
-        Logger.error("Unknown HubSpot workflow step: #{next_step}")
-        {:error, "Unknown workflow step"}
-    end
-  end
-
-  # Multi-step action workflow
-  defp execute_multi_step_workflow(task, user, opts) do
-    Logger.debug("Executing multi-step workflow for task #{task.id}")
-
-    # Use AI to determine next steps based on the request and current state
-    case determine_next_action(task, user) do
-      {:ok, action} ->
-        execute_determined_action(task, user, action, opts)
-
-      {:error, reason} ->
-        Logger.error("Failed to determine next action for task #{task.id}: #{reason}")
-        fail_task(task, reason)
-    end
-  end
-
-  # Composite workflow (multiple subtasks)
-  defp execute_composite_workflow(task, user, opts) do
-    Logger.debug("Executing composite workflow for task #{task.id}")
-
-    # Create and execute subtasks based on the main task
-    case break_down_composite_task(task, user) do
-      {:ok, subtasks} ->
-        execute_subtasks(task, subtasks, user, opts)
-
-      {:error, reason} ->
-        Logger.error("Failed to break down composite task #{task.id}: #{reason}")
-        fail_task(task, reason)
-    end
-  end
-
-  # Generic workflow for simple tasks
-  defp execute_generic_workflow(task, user, opts) do
-    Logger.debug("Executing generic workflow for task #{task.id}")
-
-    # Use the existing tool calling system
-    case ToolCalling.ask_with_tools(user, task.original_request, opts) do
-      {:ok, result} ->
-        # Mark task as completed
-        TaskManager.update_task_status(task.id, "completed", %{
-          workflow_state: %{
-            "final_result" => result,
-            "tools_used" => result.tools_used,
-            "completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-          }
-        })
-
-        {:ok, result}
-
-      {:error, reason} ->
-        Logger.error("Generic workflow failed for task #{task.id}: #{reason}")
-        fail_task(task, reason)
-    end
-  end
-
-  # Email workflow steps
-
-  defp analyze_email_request(task, user, _opts) do
-    Logger.debug("Analyzing email request for task #{task.id}")
-
-    # Use AI to analyze the email request and determine what needs to be done
-    analysis_prompt = """
-    Analyze this email request and determine the next steps:
-
-    Request: #{task.original_request}
-
-    Provide a JSON response with:
-    - recipients: Who should receive the email
-    - purpose: Purpose of the email
-    - urgency: How urgent this email is
-    - needs_approval: Whether this email needs approval before sending
-    - next_step: What should happen next
-    """
-
-    case ToolCalling.ask_with_tools(user, analysis_prompt, %{enable_tools: false, enable_workflows: false}) do
-      {:ok, result} ->
-        # Parse the analysis and update workflow state
-        workflow_state = Map.merge(task.workflow_state, %{
-          "analysis" => result.response,
-          "analysis_completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        # Move to next step
-        next_step = "find_recipients"
-        update_workflow_and_continue(task, user, workflow_state, next_step)
-
-      {:error, reason} ->
-        fail_task(task, "Failed to analyze email request: #{reason}")
-    end
-  end
-
-  defp find_email_recipients(task, user, _opts) do
-    # Extract recipient information from the request
-    case ToolCalling.execute_tool(user, "email", "email_find_contact", %{
-      "name" => extract_recipient_name(task.original_request),
-      "context_hint" => task.original_request
-    }) do
-      {:ok, result} ->
-        workflow_state = Map.merge(task.workflow_state, %{
-          "recipients_found" => result,
-          "recipients_found_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        next_step = "draft_email"
-        update_workflow_and_continue(task, user, workflow_state, next_step)
-
-      {:error, reason} ->
-        fail_task(task, "Failed to find email recipients: #{reason}")
-    end
-  end
-
-  defp draft_email_content(task, user, _opts) do
-    # Draft the email based on the request and found recipients
-    recipient_name = extract_recipient_name(task.original_request)
-    purpose = extract_email_purpose(task.original_request)
-
-    case ToolCalling.execute_tool(user, "email", "email_draft", %{
-      "recipient_name" => recipient_name,
-      "purpose" => purpose,
-      "key_points" => extract_key_points(task.original_request),
-      "tone" => "professional"
-    }) do
-      {:ok, result} ->
-        workflow_state = Map.merge(task.workflow_state, %{
-          "email_draft" => result,
-          "draft_created_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        next_step = "send_email"
-        update_workflow_and_continue(task, user, workflow_state, next_step)
-
-      {:error, reason} ->
-        fail_task(task, "Failed to draft email: #{reason}")
-    end
-  end
-
-  defp send_email_step(task, user, _opts) do
-    # Send the drafted email
-    recipients = get_recipients_from_workflow(task)
-    draft = get_in(task.workflow_state, ["email_draft", "draft"])
-    subject = extract_email_subject(task.original_request)
-
-    Logger.debug("Email send step - recipients: #{inspect(recipients)}, draft: #{inspect(draft)}, subject: #{inspect(subject)}")
-
-    # Ensure we have a body - fallback to a simple message if draft is nil
-    body = case draft do
-      nil ->
-        Logger.warn("No draft found in workflow state, creating simple message")
-        create_simple_availability_message(task.original_request)
-      draft when is_binary(draft) -> draft
-      _ ->
-        Logger.warn("Invalid draft format: #{inspect(draft)}")
-        create_simple_availability_message(task.original_request)
-    end
-
-    case ToolCalling.execute_tool(user, "email", "email_send", %{
-      "to" => recipients,
-      "subject" => subject,
-      "body" => body
-    }) do
-      {:ok, result} ->
-        workflow_state = Map.merge(task.workflow_state, %{
-          "email_sent" => result,
-          "sent_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        # Check if we need to wait for a reply
-        if needs_reply?(task.original_request) do
-          TaskManager.mark_task_waiting(task.id, "email_reply", %{
-            "message_id" => result.message_id,
-            "recipients" => recipients
-          })
-          {:waiting, task}
-        else
-          TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-          {:ok, %{message: "Email sent successfully", details: result}}
-        end
-
-      {:error, reason} ->
-        fail_task(task, "Failed to send email: #{reason}")
-    end
-  end
-
-  defp wait_for_email_reply(task, user, opts) do
-    # This step is reached when resuming from an email reply event
-    event_data = Map.get(opts, :event_data, %{})
-
-    workflow_state = Map.merge(task.workflow_state, %{
-      "reply_received" => event_data,
-      "reply_received_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-    })
-
-    next_step = "process_reply"
-    update_workflow_and_continue(task, user, workflow_state, next_step)
-  end
-
-  defp process_email_reply(task, user, _opts) do
-    # Process the received email reply
-    reply_data = get_in(task.workflow_state, ["reply_received"])
-
-    # Check if this was a meeting request that might need calendar event creation
-    if is_meeting_request_workflow?(task.original_request) do
-      # Analyze the reply to see if it's an acceptance
-      analysis_prompt = """
-      Analyze this reply to a meeting request email:
-
-      Original request: #{task.original_request}
-      Reply content: #{inspect(reply_data)}
-
-      Respond with JSON:
-      {
-        "meeting_accepted": true/false,
-        "proposed_time": "time if mentioned",
-        "response_type": "accepted/declined/counter_proposal/unclear"
-      }
-      """
-
-      case ToolCalling.ask_with_tools(user, analysis_prompt, %{enable_tools: false, enable_workflows: false}) do
-        {:ok, result} ->
-          # Try to parse the response as JSON to check for acceptance
-          case Jason.decode(result.response) do
-            {:ok, %{"meeting_accepted" => true}} ->
-              workflow_state = Map.merge(task.workflow_state, %{
-                "reply_analysis" => result.response,
-                "meeting_accepted" => true
-              })
-
-              next_step = "create_calendar_event"
-              update_workflow_and_continue(task, user, workflow_state, next_step)
-
-            {:ok, %{"meeting_accepted" => false}} ->
-              workflow_state = Map.merge(task.workflow_state, %{
-                "reply_analysis" => result.response,
-                "meeting_declined" => true,
-                "task_completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-              })
-
-              TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-              {:ok, %{message: "Meeting was declined, no calendar event created", details: result}}
-
-            _ ->
-              # Couldn't parse response or unclear, complete the task
-              workflow_state = Map.merge(task.workflow_state, %{
-                "reply_analysis" => result.response,
-                "task_completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-              })
-
-              TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-              {:ok, %{message: "Email workflow completed - unclear response", details: result}}
-          end
-
-        {:error, reason} ->
-          fail_task(task, "Failed to analyze email reply: #{reason}")
-      end
-    else
-      # Regular email workflow - just complete
-      analysis_prompt = """
-      A reply was received for this email task:
-
-      Original request: #{task.original_request}
-      Reply content: #{inspect(reply_data)}
-
-      Determine if any follow-up actions are needed or if the task is complete.
-      """
-
-      case ToolCalling.ask_with_tools(user, analysis_prompt, %{enable_tools: false, enable_workflows: false}) do
-        {:ok, result} ->
-          workflow_state = Map.merge(task.workflow_state, %{
-            "reply_analysis" => result.response,
-            "task_completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-          })
-
-          TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-          {:ok, %{message: "Email workflow completed", analysis: result.response}}
-
-        {:error, reason} ->
-          fail_task(task, "Failed to process email reply: #{reason}")
-      end
-    end
-  end
-
-  defp create_conditional_calendar_event(task, user, _opts) do
-    # Create a calendar event based on the meeting acceptance
-    meeting_info = extract_meeting_info_from_request(task.original_request)
-
-    case ToolCalling.execute_tool(user, "calendar", "calendar_create_event", %{
-      "title" => meeting_info.title,
-      "start_time" => meeting_info.start_time,
-      "end_time" => meeting_info.end_time,
-      "attendees" => meeting_info.attendees,
-      "description" => "Meeting scheduled following email confirmation"
-    }) do
-      {:ok, result} ->
-        workflow_state = Map.merge(task.workflow_state, %{
-          "calendar_event_created" => result,
-          "event_created_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-          "task_completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-        {:ok, %{message: "Meeting accepted and calendar event created", details: result}}
-
-      {:error, reason} ->
-        fail_task(task, "Failed to create calendar event: #{reason}")
-    end
-  end
-
-  defp is_meeting_request_workflow?(request) do
-    request_lower = String.downcase(request)
-    meeting_indicators = [
-      "meeting", "meet", "appointment", "call", "conference", "discussion",
-      "calendar", "schedule", "available", "availability"
-    ]
-
-    Enum.any?(meeting_indicators, fn indicator ->
-      String.contains?(request_lower, indicator)
-    end)
-  end
-
-  defp extract_meeting_info_from_request(request) do
-    # Extract meeting details from the original request
-    # This is a simplified version - in production you'd want more sophisticated parsing
-
-    # Try to extract time information
-    time_patterns = [
-      ~r/tomorrow (\d+)-(\d+)([ap]m)/i,
-      ~r/(\d+):(\d+)\s*([ap]m)/i,
-      ~r/(\d+)\s*([ap]m)/i
-    ]
-
-    {start_time, end_time} = case Enum.find_value(time_patterns, fn pattern ->
-      case Regex.run(pattern, request) do
-        [_, start_hour, end_hour, period] when byte_size(end_hour) > 0 ->
-          # Handle ranges like "4-5pm"
-          {parse_time(start_hour, period), parse_time(end_hour, period)}
-        [_, hour, minute, period] ->
-          # Handle specific times like "4:30pm"
-          start = parse_time_with_minute(hour, minute, period)
-          end_time = add_hour(start)
-          {start, end_time}
-        [_, hour, period] ->
-          # Handle hour-only like "4pm"
-          start = parse_time(hour, period)
-          end_time = add_hour(start)
-          {start, end_time}
-        _ -> nil
-      end
-    end) do
-      {start, end_time} when not is_nil(start) -> {start, end_time}
-      _ -> {default_meeting_time(), default_meeting_end_time()}
-    end
-
-    # Extract attendee from request (simple name extraction)
-    attendee_email = extract_attendee_email(request)
-
-    %{
-      title: "Meeting",
-      start_time: start_time,
-      end_time: end_time,
-      attendees: [attendee_email],
-      description: "Meeting scheduled via email workflow"
-    }
-  end
-
-  defp parse_time(hour_str, period) do
-    hour = String.to_integer(hour_str)
-    hour = if String.downcase(period) == "pm" and hour != 12, do: hour + 12, else: hour
-    hour = if String.downcase(period) == "am" and hour == 12, do: 0, else: hour
-
-    # Default to tomorrow at the specified hour
-    tomorrow = DateTime.utc_now() |> DateTime.add(1, :day)
-    beginning_of_day = %{tomorrow | hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    beginning_of_day
-    |> DateTime.add(hour * 3600, :second)
-    |> DateTime.to_iso8601()
-  end
-
-  defp parse_time_with_minute(hour_str, minute_str, period) do
-    hour = String.to_integer(hour_str)
-    minute = String.to_integer(minute_str)
-    hour = if String.downcase(period) == "pm" and hour != 12, do: hour + 12, else: hour
-    hour = if String.downcase(period) == "am" and hour == 12, do: 0, else: hour
-
-    tomorrow = DateTime.utc_now() |> DateTime.add(1, :day)
-    beginning_of_day = %{tomorrow | hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    beginning_of_day
-    |> DateTime.add(hour * 3600 + minute * 60, :second)
-    |> DateTime.to_iso8601()
-  end
-
-  defp add_hour(iso_datetime) do
-    {:ok, dt, _} = DateTime.from_iso8601(iso_datetime)
-    dt
-    |> DateTime.add(3600, :second)
-    |> DateTime.to_iso8601()
-  end
-
-  defp default_meeting_time do
-    tomorrow = DateTime.utc_now() |> DateTime.add(1, :day)
-    beginning_of_day = %{tomorrow | hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    beginning_of_day
-    |> DateTime.add(16 * 3600, :second)  # 4 PM
-    |> DateTime.to_iso8601()
-  end
-
-  defp default_meeting_end_time do
-    tomorrow = DateTime.utc_now() |> DateTime.add(1, :day)
-    beginning_of_day = %{tomorrow | hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    beginning_of_day
-    |> DateTime.add(17 * 3600, :second)  # 5 PM
-    |> DateTime.to_iso8601()
-  end
-
-  defp extract_attendee_email(request) do
-    # Simple name extraction - in production you'd want to look up actual email addresses
-    # from contacts or ask for clarification
-
-    # Try to extract a name after "to" or "with"
-    name_patterns = [
-      ~r/(?:to|with)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/,
-      ~r/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/
-    ]
-
-    case Enum.find_value(name_patterns, fn pattern ->
-      case Regex.run(pattern, request) do
-        [_, name] -> name
-        _ -> nil
-      end
-    end) do
-      nil -> "attendee@example.com"  # Fallback
-      name ->
-        # Convert name to email (this is a placeholder - you'd want to look this up)
-        name
-        |> String.downcase()
-        |> String.replace(" ", ".")
-        |> Kernel.<>("@example.com")
-    end
-  end
-
-  # Calendar workflow steps (simplified for brevity)
-
-  defp analyze_calendar_request(task, user, _opts) do
-    # Similar to email analysis but for calendar events
-    workflow_state = Map.merge(task.workflow_state, %{
-      "request_type" => "calendar",
-      "analyzed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-    })
-
-    next_step = "find_participants"
-    update_workflow_and_continue(task, user, workflow_state, next_step)
-  end
-
-  defp find_meeting_participants(task, user, _opts) do
-    # Extract participants from the request
-    next_step = "find_available_time"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp find_available_time_slots(task, user, _opts) do
-    # Find available time slots for the meeting
-    next_step = "create_event"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp create_calendar_event(task, user, _opts) do
-    # Create the calendar event using the calendar tool
-    event_data = extract_calendar_data(task.original_request)
-
-    case ToolCalling.execute_tool(user, "calendar", "calendar_create_event", event_data) do
-      {:ok, result} ->
-        workflow_state = Map.merge(task.workflow_state, %{
-          "event_created" => result,
-          "created_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        })
-
-        TaskManager.update_task_status(task.id, "completed", %{workflow_state: workflow_state})
-        {:ok, %{message: "Calendar event created successfully", details: result}}
-
-      {:error, reason} ->
-        fail_task(task, "Failed to create calendar event: #{reason}")
-    end
-  end
-
-  defp send_calendar_invitations(task, user, _opts) do
-    # Send calendar invitations
-    next_step = "wait_for_responses"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp wait_for_calendar_responses(task, user, _opts) do
-    # Wait for calendar responses
-    next_step = "process_responses"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp process_calendar_responses(task, user, _opts) do
-    # Process calendar responses
-    TaskManager.update_task_status(task.id, "completed")
-    {:ok, %{message: "Calendar workflow completed"}}
-  end
-
-  # HubSpot workflow steps (simplified)
-
-  defp analyze_hubspot_request(task, user, _opts) do
-    next_step = "find_contacts"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp find_hubspot_contacts(task, user, _opts) do
-    next_step = "create_contact"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
-  end
-
-  defp create_hubspot_contact(task, user, _opts) do
-    Logger.info("Creating HubSpot contact for task #{task.id}")
-    
-    # Extract contact data from task request
-    contact_data = extract_contact_data_from_request(task.original_request)
-    
-    case AiAgent.LLM.Tools.HubSpotTool.execute(user, "hubspot_create_contact", contact_data) do
-      {:ok, result} ->
-        Logger.info("Successfully created HubSpot contact: #{result[:contact_id]}")
-        
-        # Update workflow state with contact info
-        updated_state = Map.put(task.workflow_state, "contact_created", result)
-        next_step = "add_notes"
-        update_workflow_and_continue(task, user, updated_state, next_step)
-        
-      {:error, reason} ->
-        Logger.error("Failed to create HubSpot contact: #{reason}")
-        TaskManager.update_task_status(task.id, "failed")
-        {:error, "Failed to create HubSpot contact: #{reason}"}
-    end
-  end
-
-  defp add_hubspot_notes(task, user, _opts) do
-    Logger.info("Adding notes to HubSpot contact for task #{task.id}")
-    
-    # Check if contact was created and if there are notes to add
-    contact_info = Map.get(task.workflow_state, "contact_created", %{})
-    contact_id = Map.get(contact_info, :contact_id)
-    
-    if contact_id do
-      # Extract any additional notes from the original request
-      notes = extract_notes_from_request(task.original_request)
-      
-      if notes && String.trim(notes) != "" do
-        note_data = %{
-          "contact_id" => to_string(contact_id),
-          "note_body" => notes,
-          "note_type" => "NOTE"
-        }
-        
-        case AiAgent.LLM.Tools.HubSpotTool.execute(user, "hubspot_add_note", note_data) do
-          {:ok, _result} ->
-            Logger.info("Successfully added note to HubSpot contact #{contact_id}")
-          {:error, reason} ->
-            Logger.warning("Failed to add note to HubSpot contact: #{reason}")
-        end
-      end
-    end
-    
-    TaskManager.update_task_status(task.id, "completed")
-    {:ok, %{message: "HubSpot workflow completed"}}
-  end
-  
-  defp extract_notes_from_request(request_text) do
-    # Extract any additional context or notes from the request
-    # For now, just return nil - could be enhanced to extract specific note content
-    nil
-  end
-
-  defp create_hubspot_deal(task, user, _opts) do
-    TaskManager.update_task_status(task.id, "completed")
-    {:ok, %{message: "HubSpot deal created"}}
-  end
-
-  defp schedule_hubspot_follow_up(task, user, _opts) do
-    TaskManager.update_task_status(task.id, "completed")
-    {:ok, %{message: "HubSpot follow-up scheduled"}}
-  end
-
-  # Helper functions
-
-  defp determine_workflow_type(request) do
-    request_lower = String.downcase(request)
-
-    cond do
-      String.contains?(request_lower, ["email", "send", "message", "write"]) ->
-        "email_workflow"
-
-      String.contains?(request_lower, ["schedule", "calendar", "meeting", "appointment"]) ->
-        "calendar_workflow"
-
-      String.contains?(request_lower, ["hubspot", "crm", "contact", "deal", "note"]) ->
-        "hubspot_workflow"
-
-      String.contains?(request_lower, ["and", "then", "after", "following"]) ->
-        "multi_step_action"
-
-      true ->
-        "multi_step_action"
-    end
-  end
-
-  defp determine_next_action(task, user) do
-    # Use AI to determine the next action based on the task state
-    prompt = """
-    Determine the next action for this task:
-
-    Original request: #{task.original_request}
-    Completed steps: #{inspect(task.steps_completed)}
-    Current workflow state: #{inspect(task.workflow_state)}
-
-    What should be done next?
-    """
-
-    case ToolCalling.ask_with_tools(user, prompt, %{enable_tools: false, enable_workflows: false}) do
-      {:ok, result} ->
-        {:ok, result.response}
+    Logger.info("Analyzing request for workflow: user #{user.id}")
+
+    # Analyze the request to understand complexity and intent
+    case analyze_request_complexity(user, request) do
+      {:simple_action, action_type} ->
+        # This doesn't need a workflow, just execute directly
+        execute_simple_action(user, request, action_type, opts)
+
+      {:complex_workflow, workflow_context} ->
+        # Create and execute a multi-step workflow
+        create_complex_workflow(user, request, workflow_context, opts)
+
+      {:needs_clarification, questions} ->
+        # Request needs clarification before proceeding
+        {:ok, %{
+          response: "I need some clarification: #{questions}",
+          needs_clarification: true,
+          questions: questions
+        }}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp execute_determined_action(task, user, action, opts) do
-    # Execute the action determined by AI
-    case ToolCalling.ask_with_tools(user, action, opts) do
-      {:ok, result} ->
-        TaskManager.update_task_status(task.id, "completed", %{
-          workflow_state: Map.merge(task.workflow_state, %{
-            "final_action" => action,
-            "final_result" => result
-          })
-        })
+  @doc """
+  Execute an existing workflow task.
+  """
+  def execute_workflow(task, user, opts \\ %{}) do
+    Logger.info("Executing workflow step for task #{task.id}")
 
-        {:ok, result}
+    case task.status do
+      "waiting" ->
+        # Task is waiting for external input (like email reply)
+        handle_waiting_task(task, user, opts)
 
-      {:error, reason} ->
-        fail_task(task, reason)
+      "active" ->
+        # Task is ready for next step
+        execute_next_workflow_step(task, user, opts)
+
+      _ ->
+        {:error, "Task #{task.id} is not in executable state"}
     end
   end
 
-  defp extract_contact_data_from_request(request_text) do
-    # Extract contact information from natural language request
-    # This is a simple parser - could be enhanced with NLP
-    
-    # Extract email using regex
-    email_regex = ~r/[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}/
-    email = case Regex.run(email_regex, request_text) do
-      [email] -> email
-      _ -> nil
-    end
-    
-    # Extract name - look for patterns like "create a contact for [Name]"
-    name_parts = extract_name_from_request(request_text)
-    
-    %{
-      "email" => email,
-      "first_name" => Map.get(name_parts, :first_name, ""),
-      "last_name" => Map.get(name_parts, :last_name, "")
-    }
-    |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
-    |> Enum.into(%{})
-  end
-  
-  defp extract_name_from_request(request_text) do
-    # Look for patterns like "create a contact for [First Last]"
-    name_patterns = [
-      ~r/create.*contact.*for\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)/i,
-      ~r/add.*contact.*([A-Z][a-z]+)\s+([A-Z][a-z]+)/i,
-      ~r/new.*contact.*([A-Z][a-z]+)\s+([A-Z][a-z]+)/i
-    ]
-    
-    Enum.reduce_while(name_patterns, %{}, fn pattern, _acc ->
-      case Regex.run(pattern, request_text) do
-        [_, first_name, last_name] ->
-          {:halt, %{first_name: first_name, last_name: last_name}}
-        _ ->
-          {:cont, %{}}
-      end
-    end)
-  end
+  @doc """
+  Resume a workflow when an external event occurs (like webhook).
+  """
+  def resume_workflow(task, event_type, event_data, user) do
+    Logger.info("Resuming workflow for task #{task.id} due to #{event_type}")
 
-  defp break_down_composite_task(task, user) do
-    # Break down a composite task into subtasks
-    {:ok, []} # Simplified for now
-  end
-
-  defp execute_subtasks(task, subtasks, user, opts) do
-    # Execute subtasks in sequence or parallel
-    TaskManager.update_task_status(task.id, "completed")
-    {:ok, %{message: "Composite task completed"}}
-  end
-
-  defp update_workflow_and_continue(task, user, workflow_state, next_step) do
-    # Update the task workflow state and continue to next step
-    case TaskManager.update_task_status(task.id, "in_progress", %{
-      workflow_state: workflow_state,
-      next_step: next_step
-    }) do
+    # Update task with event data and continue
+    case TaskManager.resume_task(task.id, event_data, "in_progress") do
       {:ok, updated_task} ->
-        # Add the current step as completed
-        TaskManager.add_completed_step(task.id, task.next_step || "initial")
-
-        # Continue with the next step
         execute_workflow(updated_task, user)
 
       {:error, reason} ->
-        fail_task(task, "Failed to update workflow state: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
-  defp fail_task(task, reason) do
-    Logger.error("Task #{task.id} failed: #{reason}")
-    TaskManager.update_task_status(task.id, "failed", %{failure_reason: reason})
-    {:error, reason}
+  # Private functions
+
+  defp analyze_request_complexity(user, request) do
+    # Use AI to understand the request naturally
+    analysis_prompt = """
+    Analyze this business request to determine if it needs a simple action or complex workflow:
+
+    Request: "#{request}"
+
+    Consider:
+    - Single actions: Send one email, schedule one meeting, add one note
+    - Complex workflows: Multi-step processes, waiting for responses, conditional actions
+
+    Respond with one of:
+    - "SIMPLE: email" - for direct email sending
+    - "SIMPLE: calendar" - for direct meeting scheduling
+    - "SIMPLE: crm" - for direct CRM actions
+    - "COMPLEX: [brief description]" - for multi-step processes
+    - "CLARIFY: [questions needed]" - if unclear
+
+    Be concise and specific.
+    """
+
+    case ToolCalling.ask_with_tools(user, analysis_prompt, %{enable_tools: false}) do
+      {:ok, result} ->
+        parse_complexity_analysis(result.response, request)
+
+      {:error, reason} ->
+        Logger.warning("Analysis failed: #{reason}, using fallback")
+        fallback_complexity_analysis(request)
+    end
   end
 
-  # Text extraction helpers
+  defp parse_complexity_analysis(response, request) do
+    response_upper = String.upcase(response)
 
-  defp extract_recipient_name(request) do
-    # Simple pattern matching to extract recipient name
-    # Look for patterns like "to John Smith" or "to Maria Johnson"
-    patterns = [
-      # First try to match full name with boundary words
-      ~r/(?:email|send.*to|to)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s+(?:asking|about|telling|regarding|and|if))/i,
-      # Then try full name without boundary
-      ~r/(?:email|send.*to|to)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)(?:\s|$)/i,
-      # Single name with boundary words
-      ~r/(?:email|send.*to|to)\s+([A-Z][a-z]+)(?:\s+(?:asking|about|telling|regarding|and|if))/i,
-      # Single name without boundary
-      ~r/(?:email|send.*to|to)\s+([A-Z][a-z]+)(?:\s|$)/i
-    ]
-
-    Enum.find_value(patterns, fn pattern ->
-      case Regex.run(pattern, request) do
-        [_, name] -> String.trim(name)
-        _ -> nil
-      end
-    end) || "Unknown"
-  end
-
-  defp extract_email_purpose(request) do
     cond do
-      String.contains?(String.downcase(request), "follow") -> "follow up on meeting"
-      String.contains?(String.downcase(request), "schedule") -> "schedule appointment"
-      String.contains?(String.downcase(request), "update") -> "send portfolio update"
-      true -> "general inquiry"
+      String.contains?(response_upper, "SIMPLE: EMAIL") ->
+        {:simple_action, "email"}
+
+      String.contains?(response_upper, "SIMPLE: CALENDAR") ->
+        {:simple_action, "calendar"}
+
+      String.contains?(response_upper, "SIMPLE: CRM") ->
+        {:simple_action, "crm"}
+
+      String.contains?(response_upper, "COMPLEX:") ->
+        description = extract_after_colon(response, "COMPLEX:")
+        {:complex_workflow, %{type: "multi_step", description: description, original_request: request}}
+
+      String.contains?(response_upper, "CLARIFY:") ->
+        questions = extract_after_colon(response, "CLARIFY:")
+        {:needs_clarification, questions}
+
+      true ->
+        # Fallback analysis
+        fallback_complexity_analysis(request)
     end
   end
 
-  defp extract_email_subject(request) do
-    String.slice(request, 0, 50) <> "..."
-  end
-
-  defp extract_key_points(request) do
-    [request]
-  end
-
-  defp extract_calendar_data(request) do
-    %{
-      "title" => "Meeting",
-      "start_time" => "2024-01-15T14:00:00-05:00",
-      "end_time" => "2024-01-15T15:00:00-05:00",
-      "description" => request
-    }
-  end
-
-  defp get_recipients_from_workflow(task) do
-    IO.inspect(task, label: "Task Details")
-    IO.inspect(task.workflow_state, label: "Workflow State")
-    IO.inspect(get_in(task.workflow_state, ["recipients_found", :emails_found]), label: "Emails Found")
-    case get_in(task.workflow_state, ["recipients_found", :emails_found]) do
-      emails when is_list(emails) and length(emails) > 0 ->
-        email_addresses = Enum.map(emails, & &1[:email])
-        Logger.debug("Found recipient emails from workflow: #{inspect(email_addresses)}")
-        email_addresses
-      _ ->
-        # Try to extract email from the original request as a last resort
-        extracted_name = extract_recipient_name(task.original_request)
-        Logger.warn("No emails found in workflow state for '#{extracted_name}', attempting direct extraction from request")
-
-        case extract_email_from_request(task.original_request) do
-          nil ->
-            Logger.error("Could not find any email address for recipient. Using demo email as last resort.")
-            ["demo@example.com"]
-          email ->
-            Logger.info("Found email '#{email}' directly from request text")
-            [email]
-        end
-    end
-  end
-
-  defp extract_email_from_request(request) do
-    # Try to find email addresses directly in the request text
-    case Regex.run(~r/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, request) do
-      [email] -> email
-      _ -> nil
-    end
-  end
-
-  defp needs_reply?(request) do
+  defp fallback_complexity_analysis(request) do
     request_lower = String.downcase(request)
-    String.contains?(request_lower, ["reply", "response", "answer", "confirm", "if", "availability", "available"])
+
+    cond do
+      # Multi-step indicators
+      String.contains?(request_lower, ["and then", "wait for", "if they", "after"]) ->
+        {:complex_workflow, %{type: "multi_step", original_request: request}}
+
+      # Simple email
+      String.contains?(request_lower, ["email", "send"]) and
+      not String.contains?(request_lower, ["schedule", "meeting"]) ->
+        {:simple_action, "email"}
+
+      # Simple calendar
+      String.contains?(request_lower, ["schedule", "meeting", "calendar"]) and
+      not String.contains?(request_lower, ["email", "ask"]) ->
+        {:simple_action, "calendar"}
+
+      # Simple CRM
+      String.contains?(request_lower, ["note", "contact", "crm"]) ->
+        {:simple_action, "crm"}
+
+      # Default to simple if unclear
+      true ->
+        {:simple_action, "unknown"}
+    end
   end
 
-  defp create_simple_availability_message(request) do
-    # Extract the meeting time from the request
-    time_info = case Regex.run(~r/tomorrow (\d+-?\d*[ap]m)/i, request) do
-      [_, time] -> "tomorrow #{time}"
-      _ -> "tomorrow"
+  defp execute_simple_action(user, request, action_type, _opts) do
+    Logger.info("Executing simple #{action_type} action")
+
+    # Use the enhanced tool calling system to handle the request
+    case ToolCalling.ask_with_tools(user, request) do
+      {:ok, result} ->
+        {:ok, %{
+          response: result.response,
+          tools_used: result.tools_used,
+          action_type: action_type,
+          workflow_type: "simple_action"
+        }}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
 
+  defp create_complex_workflow(user, request, workflow_context, opts) do
+    Logger.info("Creating complex workflow")
+
+    # Create a task to track the workflow
+    task_data = %{
+      user_id: user.id,
+      original_request: request,
+      workflow_type: "complex",
+      workflow_state: workflow_context,
+      next_step: "analyze_and_execute",
+      status: "active"
+    }
+
+    case TaskManager.create_task(user, request, "multi_step_action", %{workflow_state: workflow_context}) do
+      {:ok, task} ->
+        # Execute the first step
+        execute_workflow(task, user, opts)
+
+      {:error, reason} ->
+        {:error, "Failed to create workflow task: #{reason}"}
+    end
+  end
+
+  defp handle_waiting_task(task, user, opts) do
+    # Task is waiting for external input
+    waiting_for = Map.get(task.workflow_state, "waiting_for", "unknown")
+
+    case waiting_for do
+      "email_reply" ->
+        {:waiting, %{
+          task: task,
+          message: "Waiting for email reply",
+          waiting_for: "email_reply"
+        }}
+
+      "calendar_response" ->
+        {:waiting, %{
+          task: task,
+          message: "Waiting for calendar responses",
+          waiting_for: "calendar_response"
+        }}
+
+      _ ->
+        # Unknown waiting state, try to continue
+        execute_next_workflow_step(task, user, opts)
+    end
+  end
+
+  defp execute_next_workflow_step(task, user, opts) do
+    next_step = task.next_step
+    workflow_state = task.workflow_state
+
+    case next_step do
+      "analyze_and_execute" ->
+        analyze_and_execute_complex_request(task, user, opts)
+
+      "process_response" ->
+        process_external_response(task, user, opts)
+
+      "complete_workflow" ->
+        complete_workflow(task, user, opts)
+
+      _ ->
+        Logger.error("Unknown workflow step: #{next_step}")
+        {:error, "Unknown workflow step: #{next_step}"}
+    end
+  end
+
+  defp analyze_and_execute_complex_request(task, user, opts) do
+    request = task.original_request
+    workflow_state = task.workflow_state
+
+    # Break down the complex request into steps
+    breakdown_prompt = """
+    Break down this complex request into actionable steps:
+
+    Request: "#{request}"
+
+    Provide a step-by-step plan. If the request involves waiting for responses or conditional actions, indicate that clearly.
+
+    Format your response as:
+    Step 1: [action]
+    Step 2: [action]
+    etc.
     """
-    Hi there,
 
-    I hope this email finds you well.
+    case ToolCalling.ask_with_tools(user, breakdown_prompt, %{enable_tools: false}) do
+      {:ok, result} ->
+        steps = parse_workflow_steps(result.response)
+        execute_workflow_steps(task, user, steps, opts)
 
-    I wanted to reach out to check if you're available for a meeting #{time_info}. Please let me know if this time works for you or if you'd prefer to schedule for a different time.
+      {:error, reason} ->
+        Logger.error("Failed to analyze complex request: #{reason}")
+        {:error, reason}
+    end
+  end
 
-    Looking forward to hearing from you.
+  defp parse_workflow_steps(response) do
+    # Extract steps from the AI response
+    response
+    |> String.split("\n")
+    |> Enum.filter(&String.contains?(&1, "Step"))
+    |> Enum.map(&String.trim/1)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {step, index} ->
+      %{
+        step_number: index,
+        description: step,
+        status: "pending"
+      }
+    end)
+  end
 
-    Best regards
-    """
+  defp execute_workflow_steps(task, user, steps, opts) do
+    # Execute the first step
+    case List.first(steps) do
+      nil ->
+        complete_workflow(task, user, opts)
+
+      first_step ->
+        execute_single_workflow_step(task, user, first_step, steps, opts)
+    end
+  end
+
+  defp execute_single_workflow_step(task, user, current_step, all_steps, opts) do
+    step_description = current_step.description
+
+    # Execute this step using the tool calling system
+    case ToolCalling.ask_with_tools(user, step_description) do
+      {:ok, result} ->
+        # Mark this step as completed
+        updated_steps = mark_step_completed(all_steps, current_step.step_number)
+
+        # Check if we need to wait for external response
+        if requires_waiting?(result) do
+          # Update task to waiting state
+          updated_state = Map.merge(task.workflow_state, %{
+            "steps" => updated_steps,
+            "current_step_result" => result,
+            "waiting_for" => determine_waiting_type(result)
+          })
+
+          case TaskManager.mark_task_waiting(task.id, determine_waiting_type(result), updated_state) do
+            {:ok, updated_task} ->
+              {:waiting, %{
+                task: updated_task,
+                message: "Step completed, waiting for external response",
+                waiting_for: determine_waiting_type(result)
+              }}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+        else
+          # Continue to next step
+          continue_to_next_step(task, user, updated_steps, result, opts)
+        end
+
+      {:error, reason} ->
+        Logger.error("Failed to execute workflow step: #{reason}")
+        {:error, reason}
+    end
+  end
+
+  defp requires_waiting?(result) do
+    # Check if the result indicates we need to wait for something
+    tools_used = Map.get(result, :tools_used, [])
+
+    Enum.any?(tools_used, fn tool ->
+      tool_name = Map.get(tool, :tool, "") |> String.downcase()
+      String.contains?(tool_name, "email") and
+      String.contains?(Map.get(tool, :description, ""), ["sent", "request"])
+    end)
+  end
+
+  defp determine_waiting_type(result) do
+    tools_used = Map.get(result, :tools_used, [])
+
+    cond do
+      Enum.any?(tools_used, fn tool -> String.contains?(Map.get(tool, :tool, ""), "email") end) ->
+        "email_reply"
+
+      Enum.any?(tools_used, fn tool -> String.contains?(Map.get(tool, :tool, ""), "calendar") end) ->
+        "calendar_response"
+
+      true ->
+        "unknown"
+    end
+  end
+
+  defp mark_step_completed(steps, step_number) do
+    Enum.map(steps, fn step ->
+      if step.step_number == step_number do
+        %{step | status: "completed"}
+      else
+        step
+      end
+    end)
+  end
+
+  defp continue_to_next_step(task, user, updated_steps, last_result, opts) do
+    # Find next pending step
+    case Enum.find(updated_steps, fn step -> step.status == "pending" end) do
+      nil ->
+        # No more steps, complete workflow
+        complete_workflow_with_results(task, user, updated_steps, last_result, opts)
+
+      next_step ->
+        # Execute next step
+        execute_single_workflow_step(task, user, next_step, updated_steps, opts)
+    end
+  end
+
+  defp complete_workflow(task, user, _opts) do
+    Logger.info("Completing workflow for task #{task.id}")
+
+    case TaskManager.update_task_status(task.id, "completed") do
+      {:ok, _updated_task} ->
+        {:ok, %{
+          message: "Workflow completed successfully",
+          task_id: task.id,
+          workflow_type: "complex"
+        }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp complete_workflow_with_results(task, user, steps, final_result, opts) do
+    Logger.info("Completing workflow with results for task #{task.id}")
+
+    updated_state = Map.merge(task.workflow_state, %{
+      "steps" => steps,
+      "final_result" => final_result,
+      "completed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+
+    case TaskManager.update_task_status(task.id, "completed", %{workflow_state: updated_state}) do
+      {:ok, _updated_task} ->
+        {:ok, %{
+          message: "Complex workflow completed successfully",
+          task_id: task.id,
+          steps_completed: length(steps),
+          final_result: final_result,
+          workflow_type: "complex"
+        }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp process_external_response(task, user, opts) do
+    Logger.info("Processing external response for task #{task.id}")
+
+    workflow_state = task.workflow_state
+    steps = Map.get(workflow_state, "steps", [])
+    last_result = Map.get(workflow_state, "current_step_result", %{})
+
+    # Continue from where we left off
+    continue_to_next_step(task, user, steps, last_result, opts)
+  end
+
+  defp extract_after_colon(text, prefix) do
+    case String.split(text, prefix, parts: 2) do
+      [_, content] -> String.trim(content)
+      _ -> ""
+    end
   end
 end

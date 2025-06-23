@@ -27,7 +27,7 @@ defmodule AiAgent.LLM.RAGQuery do
   - user: User struct (for retrieving their documents)
   - question: The user's question/query
   - opts: Options map with keys:
-    - :model - OpenAI model to use (default: "gpt-4o") 
+    - :model - OpenAI model to use (default: "gpt-4o")
     - :max_tokens - Max response tokens (default: 1000)
     - :context_limit - Max number of documents to retrieve (default: 5)
     - :similarity_threshold - Min similarity for document inclusion (default: 0.6)
@@ -254,11 +254,12 @@ defmodule AiAgent.LLM.RAGQuery do
     4. Indicate when you don't have enough information to answer a question
 
     Guidelines:
-    - Be concise but thorough in your responses
     - Always base your answers on the provided context documents
+    - Be concise but thorough in your responses
     - If asked about specific people or events, cite the relevant document/email
     - If the context doesn't contain the needed information, say so clearly
     - Maintain professional tone appropriate for a financial advisor's assistant
+    - Be Specific and cite information from the documents when possible
     """
   end
 

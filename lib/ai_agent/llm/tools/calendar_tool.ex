@@ -42,11 +42,11 @@ defmodule AiAgent.LLM.Tools.CalendarTool do
               },
               start_time: %{
                 type: "string",
-                description: "Start time in ISO 8601 format (e.g., '2024-01-15T14:00:00-05:00')"
+                description: "Start time in ISO 8601 format with timezone. CRITICAL: Calculate the actual requested date and time. For 'tomorrow', use the next day's date. For 'Jun 24, 2025', use that specific date. Examples of format: '2025-06-24T16:00:00-05:00' for June 24, 2025 at 4 PM. Always use the current year or specified year, never use example years like 2024."
               },
               end_time: %{
                 type: "string",
-                description: "End time in ISO 8601 format (e.g., '2024-01-15T15:00:00-05:00')"
+                description: "End time in ISO 8601 format with timezone. CRITICAL: Calculate the actual requested date and time. Must be on the same date as start_time but with later time. Examples of format: '2025-06-24T17:00:00-05:00' for June 24, 2025 at 5 PM. Always use the current year or specified year, never use example years like 2024."
               },
               attendees: %{
                 type: "array",

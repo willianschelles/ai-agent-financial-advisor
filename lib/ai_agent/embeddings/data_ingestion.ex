@@ -33,7 +33,7 @@ defmodule AiAgent.Embeddings.DataIngestion do
          {:ok, messages} <- fetch_gmail_messages(access_token, limit, query) do
       IO.inspect(messages, label: "Fetched Gmail Messages")
       # Convert messages to document format
-      limited_messages = Enum.take(messages, 3)
+      limited_messages = Enum.take(messages, 30)
 
       documents =
         limited_messages

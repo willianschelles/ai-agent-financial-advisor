@@ -42,7 +42,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
               },
               body: %{
                 type: "string",
-                description: "Email body content"
+                description: "Email body content - use text with useful and specific info. Avoid generic messaged"
               },
               cc: %{
                 type: "array",
@@ -159,6 +159,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
   defp send_email(user, args) do
     Logger.info("Sending email for user #{user.id}")
 
+    IO.inspect(args, label: "Email Arguments")
     # Validate required arguments
     with {:ok, to_addresses} <- get_required_arg(args, "to"),
          {:ok, subject} <- get_required_arg(args, "subject"),
@@ -236,15 +237,15 @@ defmodule AiAgent.LLM.Tools.EmailTool do
 
       if Enum.empty?(emails) do
         Logger.warning("No emails found for '#{name}', trying fallback strategies")
-        
+
         # Try additional fallback strategies
         fallback_emails = try_fallback_email_search(user, name)
-        
+
         if Enum.empty?(fallback_emails) do
           # Final attempt: Try HubSpot search
           Logger.info("Attempting HubSpot contact search for '#{name}'")
           hubspot_emails = try_hubspot_contact_search(user, name)
-          
+
           if Enum.empty?(hubspot_emails) do
             {:ok,
              %{
@@ -277,17 +278,17 @@ defmodule AiAgent.LLM.Tools.EmailTool do
         {:error, reason}
     end
   end
-  
+
   defp find_email_with_multiple_strategies(user, name, context_hint) do
     strategies = [
       # Strategy 1: Search with full name and context
       fn -> search_documents_for_email(user, "#{name} #{context_hint}", name, 0.2) end,
-      
+
       # Strategy 2: Search with just the name (lower threshold)
       fn -> search_documents_for_email(user, name, name, 0.15) end,
-      
+
       # Strategy 3: Search with first name only if it's a full name
-      fn -> 
+      fn ->
         first_name = String.split(name) |> List.first()
         if first_name != name do
           search_documents_for_email(user, first_name, name, 0.1)
@@ -295,9 +296,9 @@ defmodule AiAgent.LLM.Tools.EmailTool do
           []
         end
       end,
-      
+
       # Strategy 4: Search with last name only if it's a full name
-      fn -> 
+      fn ->
         parts = String.split(name)
         if length(parts) > 1 do
           last_name = List.last(parts)
@@ -307,14 +308,14 @@ defmodule AiAgent.LLM.Tools.EmailTool do
         end
       end
     ]
-    
+
     # Try each strategy until we find emails
     Enum.find_value(strategies, [], fn strategy ->
       emails = strategy.()
       if Enum.empty?(emails), do: nil, else: emails
     end) || []
   end
-  
+
   defp search_documents_for_email(user, search_query, original_name, threshold) do
     case AiAgent.Embeddings.VectorStore.find_similar_documents(user, search_query, %{
            limit: 15,
@@ -323,13 +324,13 @@ defmodule AiAgent.LLM.Tools.EmailTool do
       {:ok, documents} ->
         Logger.debug("Found #{length(documents)} documents for query '#{search_query}'")
         extract_emails_from_documents(documents, original_name)
-        
+
       {:error, reason} ->
         Logger.warning("Document search failed for '#{search_query}': #{reason}")
         []
     end
   end
-  
+
   defp try_fallback_email_search(user, name) do
     # Strategy: Search for any mention of the name with very low threshold
     case AiAgent.Embeddings.VectorStore.find_similar_documents(user, name, %{
@@ -338,7 +339,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
          }) do
       {:ok, documents} ->
         Logger.debug("Fallback search found #{length(documents)} documents")
-        
+
         # Extract ALL emails from these documents and try to match them intelligently
         all_emails = documents
         |> Enum.flat_map(fn doc ->
@@ -346,19 +347,19 @@ defmodule AiAgent.LLM.Tools.EmailTool do
           |> List.flatten()
         end)
         |> Enum.uniq()
-        
+
         Logger.debug("Found #{length(all_emails)} unique emails in fallback search")
-        
+
         # Try to match emails to the name
         name_parts = String.split(String.downcase(name), " ")
-        
+
         matched_emails = Enum.filter(all_emails, fn email ->
           email_lower = String.downcase(email)
           Enum.any?(name_parts, fn part ->
             String.contains?(email_lower, part) and String.length(part) > 2
           end)
         end)
-        
+
         Enum.map(matched_emails, fn email ->
           %{
             email: email,
@@ -366,12 +367,12 @@ defmodule AiAgent.LLM.Tools.EmailTool do
             confidence: "low"
           }
         end)
-        
+
       {:error, _} ->
         []
     end
   end
-  
+
   defp try_hubspot_contact_search(user, name) do
     # Try to find the contact in HubSpot
     case AiAgent.LLM.Tools.HubSpotTool.execute(user, "hubspot_search_contacts", %{
@@ -380,7 +381,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
          }) do
       {:ok, result} ->
         Logger.debug("HubSpot search result: #{inspect(result)}")
-        
+
         case result do
           %{"contacts" => contacts} when is_list(contacts) ->
             # Extract emails from HubSpot contacts
@@ -395,10 +396,10 @@ defmodule AiAgent.LLM.Tools.EmailTool do
                 _ -> []
               end
             end)
-            
+
           _ -> []
         end
-        
+
       {:error, reason} ->
         Logger.debug("HubSpot contact search failed: #{reason}")
         []
@@ -439,6 +440,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
           "I hope this email finds you well."
       end
 
+      IO.inspect(key_points, label: "Key Points")
     # Format key points
     points_text =
       key_points
@@ -528,7 +530,7 @@ defmodule AiAgent.LLM.Tools.EmailTool do
       end
 
     # Check if the name appears anywhere in the content near common email indicators
-    name_near_indicators = 
+    name_near_indicators =
       if Enum.any?(name_parts, fn part -> String.contains?(content_lower, part) end) do
         # Check if email appears in content with common patterns
         String.contains?(content_lower, ["email:", "contact:", "from:", "to:", "reply-to:"]) or

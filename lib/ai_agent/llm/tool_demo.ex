@@ -279,11 +279,15 @@ defmodule AiAgent.LLM.ToolDemo do
   end
 
   defp test_calendar_tool(user) do
-    # Test calendar event creation
+    # Test calendar event creation with dynamic dates
+    tomorrow = DateTime.utc_now() |> DateTime.add(1, :day)
+    demo_start = %{tomorrow | hour: 14, minute: 0, second: 0, microsecond: {0, 0}} |> DateTime.to_iso8601()
+    demo_end = %{tomorrow | hour: 15, minute: 0, second: 0, microsecond: {0, 0}} |> DateTime.to_iso8601()
+    
     calendar_args = %{
       "title" => "Demo Meeting",
-      "start_time" => "2024-01-15T14:00:00-05:00",
-      "end_time" => "2024-01-15T15:00:00-05:00",
+      "start_time" => demo_start,
+      "end_time" => demo_end,
       "description" => "Test meeting created by tool demo"
     }
 
@@ -295,10 +299,13 @@ defmodule AiAgent.LLM.ToolDemo do
         IO.puts("  ❌ Calendar event creation failed: #{reason}")
     end
 
-    # Test free time finding
+    # Test free time finding with dynamic dates
+    today = DateTime.utc_now()
+    tomorrow = DateTime.add(today, 1, :day)
+    
     free_time_args = %{
-      "start_date" => "2024-01-15",
-      "end_date" => "2024-01-16",
+      "start_date" => Date.to_iso8601(DateTime.to_date(today)),
+      "end_date" => Date.to_iso8601(DateTime.to_date(tomorrow)),
       "duration_minutes" => 60
     }
 

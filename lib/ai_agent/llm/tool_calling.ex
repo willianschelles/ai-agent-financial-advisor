@@ -49,7 +49,7 @@ defmodule AiAgent.LLM.ToolCalling do
       # Simple question (no tools needed)
       iex> AiAgent.LLM.ToolCalling.ask_with_tools(user, "Who mentioned baseball?")
       {:ok, %{response: "John mentioned...", tools_used: [], context_used: [...]}}
-      
+
       # Multi-step action (creates workflow)
       iex> AiAgent.LLM.ToolCalling.ask_with_tools(user, "Schedule a meeting with John tomorrow at 2pm and send him a follow-up email")
       {:ok, %{response: "I've started...", tools_used: [...], task: %Task{...}}}
@@ -60,7 +60,7 @@ defmodule AiAgent.LLM.ToolCalling do
     enable_tools = Map.get(opts, :enable_tools, true)
     enable_workflows = Map.get(opts, :enable_workflows, true)
     task_id = Map.get(opts, :task_id)
-    
+
     # Check if this is continuing an existing task
     case task_id do
       nil ->
@@ -70,7 +70,7 @@ defmodule AiAgent.LLM.ToolCalling do
         else
           handle_simple_request(user, question, opts)
         end
-      
+
       task_id when is_integer(task_id) ->
         # Continue existing task
         continue_existing_task(user, task_id, question, opts)
@@ -218,33 +218,36 @@ defmodule AiAgent.LLM.ToolCalling do
 
   defp build_tool_aware_system_prompt do
     """
-    You are an AI assistant for a financial advisor with access to their client information and the ability to perform actions on their behalf.
+    You are an intelligent AI assistant for a financial advisor. You have access to their client information through context documents and can perform actions using various tools.
 
-    You have access to these tools:
-    1. Google Calendar - Schedule, modify, or cancel appointments
-    2. Gmail - Send emails to clients or contacts
-    3. HubSpot CRM - Add notes, create contacts, update client information
+    Available tools:
+    - Gmail: Send professional emails
+    - Google Calendar: Schedule and manage appointments
+    - HubSpot CRM: Manage client relationships and notes
 
-    Your role is to:
-    1. Answer questions about clients based on the provided context documents
-    2. When the user requests an action (like "schedule a meeting" or "send an email"), use the appropriate tools
-    3. Provide clear, helpful responses that confirm what actions were taken
-    4. Maintain professional tone appropriate for a financial advisor's assistant
+    Your approach:
+    1. **Context-Driven Intelligence**: Always review the provided context documents first. Use specific information from emails, CRM records, and notes to inform your responses and actions. When creating emails with information about topics (like speakers, events, or projects), you MUST include the specific details from the context documents - names, dates, credentials, locations, etc.
 
-    Guidelines for tool usage:
-    - When the user requests an action, execute it directly using tools
-    - For email requests: use email_send to send emails immediately, don't draft unless explicitly asked
-    - For calendar requests: create events immediately when requested
-    - If you need more information to complete an action, ask for clarification
-    - When scheduling meetings, try to find contact information from the provided context
-    - When sending emails, use professional language appropriate for financial services
-    - For email subjects: EXTRACT ONLY THE CORE TOPIC. Never include action words like 'send', 'email', 'about', 'to' or recipient names. Examples: 'send email to John about Avenue Connection' → Subject: 'Avenue Connection'. 'email Mike about quarterly results' → Subject: 'Quarterly Results'. 'send meeting request about project status' → Subject: 'Project Status'. BAD examples to avoid: 'Email about X', 'Send email about Y', 'Meeting request about Z'. Use 1-4 words maximum focusing only on the business topic.
+    2. **Dynamic Decision Making**: Choose the most appropriate action based on the situation:
+       - If user wants to communicate with someone, look for their contact info in context
+       - If discussing a topic, incorporate relevant details from your knowledge and context
+       - If scheduling, consider existing calendar information and preferences
 
-    Guidelines for responses:
-    - Be concise but thorough
-    - Base answers on the provided context documents when available
-    - If you used tools, briefly describe what was accomplished
-    - If tools failed, explain what went wrong and suggest alternatives
+    3. **Professional Communication**:
+       - Create emails that are specific and valuable, not generic
+       - CRITICAL: When sending informational emails, include actual details from context documents. For example, if sending information about speakers, include their names, titles, background, and specific details rather than generic statements
+       - Use context to personalize communications appropriately
+       - Generate clear, professional subject lines that capture the essence of the message
+
+    4. **Intelligent Tool Usage**:
+       - Execute actions when requested, but use context to enhance them
+       - For dates: 'Tomorrow' means the next calendar day from today (June 23, 2025)
+       - Find contact information from context when possible
+       - Ask for clarification only when genuinely needed
+
+    5. **Natural Interaction**: Respond conversationally while being helpful. Don't follow rigid patterns - adapt to what makes sense for each specific request.
+
+    Your goal is to be genuinely helpful by combining your knowledge with the specific context about this advisor's clients and business to provide valuable, personalized assistance.
     """
   end
 
@@ -256,6 +259,8 @@ defmodule AiAgent.LLM.ToolCalling do
     USER REQUEST: #{question}
 
     Please help the user with their request. If they're asking for information, use the context documents to provide an accurate answer. If they're requesting an action (like scheduling, emailing, or updating CRM), use the appropriate tools to complete the task.
+
+    IMPORTANT: When sending informational emails, you MUST include specific details from the context documents above. For example, if sending information about speakers or events, include actual names, credentials, dates, and other factual information rather than generic statements.
     """
   end
 
@@ -401,22 +406,22 @@ defmodule AiAgent.LLM.ToolCalling do
   defp get_openai_key do
     System.get_env("OPENAI_API_KEY")
   end
-  
+
   # New workflow and task handling functions
-  
+
   defp is_complex_request?(question) do
     question_lower = String.downcase(question)
-    
+
     # Skip analysis prompts and internal system prompts
     analysis_indicators = [
       "analyze this", "provide a json response", "determine the next steps",
       "extract recipient information", "original request:", "completed steps:"
     ]
-    
+
     is_analysis_prompt = Enum.any?(analysis_indicators, fn indicator ->
       String.contains?(question_lower, indicator)
     end)
-    
+
     if is_analysis_prompt do
       false
     else
@@ -428,7 +433,7 @@ defmodule AiAgent.LLM.ToolCalling do
         "wait for", "follow up", "remind me", "check back",
         "if.*accepts", "if.*confirms", "if.*agrees", "if.*available"
       ]
-      
+
       is_complex = Enum.any?(multi_step_indicators, fn indicator ->
         # Check if it's a regex pattern (contains *)
         if String.contains?(indicator, "*") do
@@ -438,7 +443,7 @@ defmodule AiAgent.LLM.ToolCalling do
           String.contains?(question_lower, indicator)
         end
       end)
-      
+
       if is_complex do
         true  # Complex requests need workflows
       else
@@ -457,20 +462,20 @@ defmodule AiAgent.LLM.ToolCalling do
           ~r/^delete .+/i,
           ~r/^archive .+/i
         ]
-        
+
         is_action_request = Enum.any?(action_patterns, fn pattern ->
           Regex.match?(pattern, question_lower)
         end)
-        
+
         # Return true only for action requests, false for informational questions
         is_action_request
       end
     end
   end
-  
+
   defp handle_workflow_request(user, question, opts) do
     Logger.info("Handling workflow request for user #{user.id}")
-    
+
     # Try the new simplified email->calendar workflow first
     case SimpleWorkflowEngine.handle_email_calendar_request(user, question) do
       {:ok, result} ->
@@ -487,13 +492,13 @@ defmodule AiAgent.LLM.ToolCalling do
             email_data: result[:email_data]
           }
         }}
-      
+
       {:not_email_calendar_workflow, _request} ->
         # Not an email->calendar workflow, try the original workflow engine
         case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
           {:ok, result} ->
             format_workflow_result(result, true)
-          
+
           {:waiting, task} ->
             Logger.info("Workflow created task #{task.id} and is waiting for external event")
             {:ok, %{
@@ -508,20 +513,20 @@ defmodule AiAgent.LLM.ToolCalling do
                 waiting_for: task.waiting_for
               }
             }}
-          
+
           {:error, reason} ->
             Logger.error("Workflow creation failed: #{reason}")
             # Fallback to simple request handling
             handle_simple_request(user, question, opts)
         end
-      
+
       {:error, reason} ->
         Logger.error("Simple workflow failed: #{reason}")
         # Fallback to original workflow engine
         case WorkflowEngine.create_and_execute_workflow(user, question, opts) do
           {:ok, result} ->
             format_workflow_result(result, true)
-          
+
           {:waiting, task} ->
             Logger.info("Workflow created task #{task.id} and is waiting for external event")
             {:ok, %{
@@ -536,7 +541,7 @@ defmodule AiAgent.LLM.ToolCalling do
                 waiting_for: task.waiting_for
               }
             }}
-          
+
           {:error, reason} ->
             Logger.error("All workflow methods failed: #{reason}")
             # Final fallback to simple request handling
@@ -544,10 +549,10 @@ defmodule AiAgent.LLM.ToolCalling do
         end
     end
   end
-  
+
   defp handle_simple_request(user, question, opts) do
     Logger.debug("Handling simple request for user #{user.id}")
-    
+
     model = Map.get(opts, :model, @default_model)
     max_tokens = Map.get(opts, :max_tokens, @default_max_tokens)
     context_limit = Map.get(opts, :context_limit, 5)
@@ -558,10 +563,10 @@ defmodule AiAgent.LLM.ToolCalling do
            get_relevant_context(user, question, context_limit, similarity_threshold),
          {:ok, result} <-
            process_with_tools(user, question, context_docs, enable_tools, model, max_tokens) do
-      
+
       # Add task field for consistency
       enhanced_result = Map.put(result, :task, nil)
-      
+
       Logger.info(
         "Simple request completed. Used #{length(result.tools_used)} tools, #{length(result.context_used)} context docs."
       )
@@ -573,10 +578,10 @@ defmodule AiAgent.LLM.ToolCalling do
         {:error, reason}
     end
   end
-  
+
   defp continue_existing_task(user, task_id, question, opts) do
     Logger.info("Continuing existing task #{task_id} for user #{user.id}")
-    
+
     case TaskManager.get_task(task_id) do
       {:ok, task} ->
         if task.user_id == user.id do
@@ -584,7 +589,7 @@ defmodule AiAgent.LLM.ToolCalling do
           case WorkflowEngine.execute_workflow(task, user, Map.put(opts, :user_input, question)) do
             {:ok, result} ->
               format_workflow_result(result, false)
-            
+
             {:waiting, updated_task} ->
               {:ok, %{
                 response: build_waiting_response(updated_task),
@@ -598,7 +603,7 @@ defmodule AiAgent.LLM.ToolCalling do
                   waiting_for: updated_task.waiting_for
                 }
               }}
-            
+
             {:error, reason} ->
               Logger.error("Failed to continue task #{task_id}: #{reason}")
               {:error, reason}
@@ -607,17 +612,17 @@ defmodule AiAgent.LLM.ToolCalling do
           Logger.error("User #{user.id} attempted to access task #{task_id} belonging to user #{task.user_id}")
           {:error, "Task not found or access denied"}
         end
-      
+
       {:error, :not_found} ->
         Logger.error("Task #{task_id} not found")
         {:error, "Task not found"}
-      
+
       {:error, reason} ->
         Logger.error("Failed to retrieve task #{task_id}: #{reason}")
         {:error, reason}
     end
   end
-  
+
   defp format_workflow_result(result, is_new_workflow) do
     # Format workflow engine results to match tool calling interface
     case result do
@@ -633,7 +638,7 @@ defmodule AiAgent.LLM.ToolCalling do
             details: details
           }
         }}
-      
+
       %{message: message} ->
         {:ok, %{
           response: message,
@@ -645,7 +650,7 @@ defmodule AiAgent.LLM.ToolCalling do
             is_new_workflow: is_new_workflow
           }
         }}
-      
+
       _ ->
         {:ok, %{
           response: "Workflow completed successfully",
@@ -660,53 +665,53 @@ defmodule AiAgent.LLM.ToolCalling do
         }}
     end
   end
-  
+
   defp build_waiting_response(task) do
     case task.waiting_for do
       "email_reply" ->
         "I've sent the email and I'm now waiting for a reply. I'll automatically continue when a response is received."
-      
+
       "calendar_response" ->
         "I've created the calendar event and sent invitations. I'm waiting for attendee responses."
-      
+
       "external_approval" ->
         "The request has been submitted for approval. I'll continue when approval is received."
-      
+
       "scheduled_time" ->
         scheduled_time = task.scheduled_for |> DateTime.to_string()
         "This task is scheduled to continue at #{scheduled_time}."
-      
+
       "user_input" ->
         "I need additional information from you to continue. Please provide the requested details."
-      
+
       _ ->
         "The task is waiting for an external event to continue. I'll automatically resume when the event occurs."
     end
   end
-  
+
   defp extract_tools_from_details(details) when is_map(details) do
     # Extract tool usage information from workflow details
     tools_used = []
-    
+
     # Check for various tool indicators in the details
     tools_used = if Map.has_key?(details, :message_id) do
       [%{tool: "email", function: "send", success: true, result: details} | tools_used]
     else
       tools_used
     end
-    
+
     tools_used = if Map.has_key?(details, :event_id) do
       [%{tool: "calendar", function: "create_event", success: true, result: details} | tools_used]
     else
       tools_used
     end
-    
+
     tools_used = if Map.has_key?(details, :contact_id) or Map.has_key?(details, :deal_id) do
       [%{tool: "hubspot", function: "create", success: true, result: details} | tools_used]
     else
       tools_used
     end
-    
+
     tools_used
   end
   defp extract_tools_from_details(_), do: []
