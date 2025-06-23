@@ -71,7 +71,6 @@ defmodule HubspotAuth.HubspotStrategy do
   defp fetch_user(conn, token) do
     conn
     |> put_private(:hubspot_token, token)
-
     # |> put_private(:hubspot_user, token.other_params)
   end
 
