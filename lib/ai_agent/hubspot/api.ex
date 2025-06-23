@@ -23,6 +23,8 @@ defmodule AiAgent.HubSpot.API do
   def create_contact(user, contact_data) do
     Logger.info("Creating HubSpot contact for user #{user.id}")
 
+    IO.inspect(contact_data, label: "HubSpot  contact_data")
+    IO.inspect(get_access_token(user), label: "HubSpot Access Token")
     case get_access_token(user) do
       {:ok, access_token} ->
         url = "#{@base_url}/crm/v3/objects/contacts"
@@ -32,7 +34,7 @@ defmodule AiAgent.HubSpot.API do
           {"Content-Type", "application/json"}
         ]
 
-        Logger.debug("Sending contact creation request to HubSpot")
+        Logger.debug("Sending contact creation request to HubSpot #{access_token}")
 
         case Req.post(url, headers: headers, json: contact_data) do
           {:ok, %{status: 201, body: contact}} ->
@@ -373,6 +375,7 @@ defmodule AiAgent.HubSpot.API do
   # Private helper functions
 
   defp get_access_token(user) do
+    IO.inspect(user.hubspot_tokens, label: "\n\n\n\nHubSpot User user.hubspot_tokens\n\n")
     case user.hubspot_tokens do
       %{"access_token" => access_token} when is_binary(access_token) ->
         # TODO: Check if token is expired and refresh if needed
