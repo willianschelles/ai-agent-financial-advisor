@@ -60,32 +60,35 @@ defmodule AiAgentWeb.Plugs.SessionManager do
 
   defp validate_and_refresh_tokens(conn, user) do
     # Check Google tokens
-    # google_valid = validate_google_tokens(user)
+    google_valid = validate_google_tokens(user)
 
-    # # Check HubSpot tokens
-    # hubspot_valid = validate_hubspot_tokens(user)
+    # Check HubSpot tokens
+    hubspot_valid = validate_hubspot_tokens(user)
 
-    # cond do
-    #   not google_valid ->
-    #     Logger.warning("Google tokens invalid for user #{user.id}")
-    #     conn
-    #     |> clear_session()
-    #     |> put_flash(:error, "Your Google authentication has expired. Please sign in again.")
-    #     |> redirect(to: "/login")
-    #     |> halt()
+    IO.inspect(google_valid, label: "Google tokens valid")
+    IO.inspect(hubspot_valid, label: "HubSpot tokens valid")
+    IO.inspect(user.hubspot_tokens, label: "User HubSpot tokens")
 
-    #   not hubspot_valid and not is_nil(user.hubspot_tokens) ->
-    #     Logger.warning("HubSpot tokens invalid for user #{user.id}")
-    #     # Don't force logout for HubSpot, just disconnect it
-    #     {:ok, updated_user} = Accounts.disconnect_hubspot(user)
-    #     conn
-    #     |> assign(:current_user, updated_user)
-    #     |> put_flash(:warning, "Your HubSpot connection has expired. Please reconnect in your dashboard.")
+    cond do
+      not google_valid ->
+        Logger.warning("Google tokens invalid for user #{user.id}")
+        conn
+        |> clear_session()
+        |> put_flash(:error, "Your Google authentication has expired. Please sign in again.")
+        |> redirect(to: "/login")
+        |> halt()
 
-    #   true ->
-    #     assign(conn, :current_user, user)
-    # end
-    assign(conn, :current_user, user)
+      not hubspot_valid and not is_nil(user.hubspot_tokens) ->
+        Logger.warning("HubSpot tokens invalid for user #{user.id}")
+        # Don't force logout for HubSpot, just disconnect it
+        # {:ok, updated_user} = Accounts.disconnect_hubspot(user)
+        conn
+        |> assign(:current_user, user)
+        |> put_flash(:warning, "Your HubSpot connection has expired. Please reconnect in your dashboard.")
+
+      true ->
+        assign(conn, :current_user, user)
+    end
   end
 
   defp validate_google_tokens(user) do
