@@ -801,33 +801,104 @@ defmodule AiAgent.Integrations.Hubspot do
 end
 
 # --- Fly.io Deployment Steps ---
-# In terminal:
-# 1. Install Fly CLI: https://fly.io/docs/hands-on/install-flyctl/
-# 2. Authenticate:
-#    fly auth login
-# 3. Create app:
-#    fly launch --name ai-agent-finance --region sjc --no-deploy
-# 4. Set secrets:
-#    fly secrets set GOOGLE_CLIENT_ID=xxx GOOGLE_CLIENT_SECRET=xxx OPENAI_API_KEY=sk-xxx HUBSPOT_CLIENT_ID=xxx HUBSPOT_CLIENT_SECRET=xxx
-# 5. Build & Deploy:
-#    fly deploy
+## Prerequisites
+1. Install Fly CLI: https://fly.io/docs/hands-on/install-flyctl/
+2. Create a Fly.io account if you don't have one
+
+## Deployment Steps
+1. Authenticate with Fly.io:
+   ```
+   fly auth login
+   ```
+
+2. Deploy the application:
+   ```
+   fly launch
+   ```
+   - This will detect your Dockerfile and fly.toml
+   - When asked to create a Postgres database, select 'yes' if you need one
+   - Choose appropriate region for deployment
+
+3. Set required secrets:
+   ```
+   fly secrets set \
+     DATABASE_URL="postgresql://postgres:<password>@<postgres-app-name>.internal:5432/ai_agent" \
+     SECRET_KEY_BASE=$(mix phx.gen.secret) \
+     GOOGLE_CLIENT_ID=xxx \
+     GOOGLE_CLIENT_SECRET=xxx \
+     HUBSPOT_CLIENT_ID=xxx \
+     HUBSPOT_CLIENT_SECRET=xxx \
+     OPENAI_API_KEY=sk-xxx
+   ```
+
+4. Deploy the application:
+   ```
+   fly deploy
+   ```
+
+5. Open the application:
+   ```
+   fly open
+   ```
+
+## Managing your Application
+- View logs: `fly logs`
+- SSH into the VM: `fly ssh console`
+- Scale up/down: `fly scale count 2` (adjust number as needed)
+- Restart the app: `fly apps restart`
 
 # --- fly.toml Example ---
-[app]
-name = "ai-agent-finance"
+The deployment process has been updated to use Docker instead of buildpacks. The following files have been created:
+
+1. `fly.toml` - Configuration for Fly.io deployment
+2. `Dockerfile` - Docker image build instructions
+3. `rel/overlays/bin/migrate` - Database migration script
+4. `rel/overlays/bin/server` - Server startup script
+5. `lib/ai_agent/release.ex` - Module for handling database migrations in production
+
+Here's the updated `fly.toml`:
+
+```
+app = "ai-agent-financial-advisor"
+primary_region = "iad"
+kill_signal = "SIGTERM"
 
 [build]
-builder = "heroku/buildpacks:20"
+  dockerfile = "Dockerfile"
+  [build.args]
+    MIX_ENV = "prod"
+
+[deploy]
+  release_command = "/app/bin/migrate"
 
 [env]
-MIX_ENV = "prod"
-PORT = "8080"
+  PHX_HOST = "ai-agent-financial-advisor.fly.dev"
+  PORT = "8080"
+  DNS_CLUSTER_QUERY = "ai-agent-financial-advisor.internal"
+  ELIXIR_VERSION = "1.14.5"
+  ERLANG_VERSION = "26.0.2"
 
-[[services]]
-internal_port = 8080
-protocol = "tcp"
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 800
 
-  [[services.ports]]
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
+
+[[statics]]
+  guest_path = "/app/priv/static"
+  url_prefix = "/assets"
+```
   handlers = ["http"]
   port = 80
 
