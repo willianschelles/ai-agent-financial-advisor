@@ -20,9 +20,8 @@ defmodule HubspotAuth.HubspotStrategy do
     # Generate a fresh state token
     state = generate_state()
     # state = "TEST_STATE_123"
-
     opts = [
-      redirect_uri: callback_url(conn),
+      redirect_uri: "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback",
       scope: scopes,
       state: state
     ]
@@ -49,7 +48,12 @@ defmodule HubspotAuth.HubspotStrategy do
       set_errors!(conn, [error("csrf_attack", "Invalid state parameter")])
     else
       module = option(conn, :oauth2_module)
-      token_params = [code: code, redirect_uri: callback_url(conn), state: state]
+
+      token_params = [
+        code: code,
+        redirect_uri: "https://ai-agent-financial-advisor.onrender.com/auth/hubspot/callback",
+        state: state
+      ]
 
       case apply(module, :get_token, [token_params]) do
         {:ok, response} ->
@@ -71,7 +75,7 @@ defmodule HubspotAuth.HubspotStrategy do
   defp fetch_user(conn, token) do
     # First, store the token in the connection
     conn = conn |> put_private(:hubspot_token, token)
-    
+
     # Then create the auth struct using the updated connection
     auth = %Ueberauth.Auth{
       provider: :hubspot,
