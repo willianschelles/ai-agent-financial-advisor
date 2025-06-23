@@ -57,6 +57,8 @@ if config_env() == :prod do
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     socket_options: socket_opts,
+    stacktrace: true,
+    show_sensitive_data_on_connection_error: true,
     parameters: [
       # Increase statement timeout for migrations
       statement_timeout: 60_000
