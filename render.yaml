@@ -8,6 +8,9 @@ services:
     buildCommand: ./render-build.sh
     startCommand: _build/prod/rel/ai_agent/bin/server
     healthCheckPath: /health
+    autoDeploy: true
+    dependsOn:
+      - ai-agent-database
     envVars:
       - key: MIX_ENV
         value: prod
@@ -26,6 +29,10 @@ services:
         fromDatabase:
           name: ai-agent-database
           property: connectionString
+      - key: POOL_SIZE
+        value: 10
+      - key: DATABASE_USE_SSL
+        value: true
       - key: POOL_SIZE
         value: 10
       - key: GOOGLE_CLIENT_ID
@@ -49,3 +56,7 @@ databases:
     ipAllowList: []
     extensions:
       - vector
+
+    # Ensure PostgreSQL database gets initialized before using
+    postDeployCommands:
+      - psql $DATABASE_URL -c 'CREATE EXTENSION IF NOT EXISTS vector;'

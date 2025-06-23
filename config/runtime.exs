@@ -25,16 +25,42 @@ if config_env() == :prod do
     System.get_env("DATABASE_URL") ||
       raise """
       environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
+      For example: postgres://USER:PASS@HOST/DATABASE or ecto://USER:PASS@HOST/DATABASE
       """
 
+  # Log the database URL (masked) for debugging
+  db_url = URI.parse(database_url)
+  masked_url = %{db_url | userinfo: "****:****"} |> URI.to_string()
+  IO.puts("Database URL (masked): #{masked_url}")
+
+  # Check if SSL should be used
+  use_ssl = System.get_env("DATABASE_USE_SSL") in ~w(true 1 yes)
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  # Parse the URL to check if it's valid
+  case db_url do
+    %URI{host: nil} ->
+      raise "Invalid DATABASE_URL: Host is missing"
+    %URI{path: nil} ->
+      raise "Invalid DATABASE_URL: Database name is missing"
+    %URI{path: "/"} ->
+      raise "Invalid DATABASE_URL: Database name is missing"
+    _ ->
+      :ok
+  end
+
+  # Additional socket options for Render's PostgreSQL
+  socket_opts = maybe_ipv6 ++ [keepalive: true]
+
   config :ai_agent, AiAgent.Repo,
-    # ssl: true,
+    ssl: use_ssl,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+    socket_options: socket_opts,
+    parameters: [
+      # Increase statement timeout for migrations
+      statement_timeout: 60_000
+    ]
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
