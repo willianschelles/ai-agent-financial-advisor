@@ -241,9 +241,11 @@ defmodule AiAgent.LLM.ToolCalling do
 
     4. **Intelligent Tool Usage**:
        - Execute actions when requested, but use context to enhance them
+       - For search+email requests: First search the context documents thoroughly, then compile the findings into a comprehensive email
        - For dates: 'Tomorrow' means the next calendar day from today (June 23, 2025)
        - Find contact information from context when possible
        - Ask for clarification only when genuinely needed
+       - When asked to search and send information, always include specific details found in your search
 
     5. **Natural Interaction**: Respond conversationally while being helpful. Don't follow rigid patterns - adapt to what makes sense for each specific request.
 
@@ -425,50 +427,74 @@ defmodule AiAgent.LLM.ToolCalling do
     if is_analysis_prompt do
       false
     else
-      # First check for indicators of complex, multi-step requests
-      multi_step_indicators = [
-        " and ", " then ", " after ", " following ", " once ", " when ",
-        " if ", " unless ", " provided ", " assuming ",
-        "schedule.*send", "send.*schedule", "create.*notify", "notify.*create",
-        "wait for", "follow up", "remind me", "check back",
-        "if.*accepts", "if.*confirms", "if.*agrees", "if.*available"
-      ]
-
-      is_complex = Enum.any?(multi_step_indicators, fn indicator ->
-        # Check if it's a regex pattern (contains *)
-        if String.contains?(indicator, "*") do
-          regex_pattern = String.replace(indicator, "*", ".*")
-          Regex.match?(~r/#{regex_pattern}/i, question_lower)
-        else
-          String.contains?(question_lower, indicator)
-        end
-      end)
-
-      if is_complex do
-        true  # Complex requests need workflows
+      # Check for common search+email pattern first - handle this as a simple request with tools
+      search_and_email_pattern = Regex.match?(~r/search\s+.+\s+and\s+send\s+.+@.+/i, question_lower)
+      
+      if search_and_email_pattern do
+        # This is a search+email request - handle it as simple with tools enabled
+        false
       else
-        # Check for action-based requests that require tools/workflows
-        action_patterns = [
-          ~r/^send (?:an? )?email to .+/i,
-          ~r/^email .+ about .+/i,
-          ~r/^schedule (?:a )?meeting with .+/i,
-          ~r/^create (?:a )?calendar event .+/i,
-          ~r/^add .+ to hubspot/i,
-          ~r/^send .+ (?:an? )?message/i,
-          ~r/^create .+ contact/i,
-          ~r/^update .+ in hubspot/i,
-          ~r/^cancel .+ meeting/i,
-          ~r/^reschedule .+/i,
-          ~r/^delete .+/i,
-          ~r/^archive .+/i
+        # First check for indicators of complex, multi-step requests
+        multi_step_indicators = [
+          " and ", " then ", " after ", " following ", " once ", " when ",
+          " if ", " unless ", " provided ", " assuming ",
+          "schedule.*send", "send.*schedule", "create.*notify", "notify.*create",
+          "wait for", "follow up", "remind me", "check back",
+          "if.*accepts", "if.*confirms", "if.*agrees", "if.*available"
         ]
 
-        is_action_request = Enum.any?(action_patterns, fn pattern ->
-          Regex.match?(pattern, question_lower)
+        is_complex = Enum.any?(multi_step_indicators, fn indicator ->
+          # Check if it's a regex pattern (contains *)
+          if String.contains?(indicator, "*") do
+            regex_pattern = String.replace(indicator, "*", ".*")
+            Regex.match?(~r/#{regex_pattern}/i, question_lower)
+          else
+            String.contains?(question_lower, indicator)
+          end
         end)
 
-        # Return true only for action requests, false for informational questions
-        is_action_request
+        if is_complex do
+          # Special case: information gathering + email sending should be simple
+          info_email_patterns = [
+            ~r/search for .+ (?:info|information) and send to .+/i,
+            ~r/gather .+ (?:info|information) .+ and (?:send|email) .+/i,
+            ~r/find .+ (?:info|information) .+ and (?:send|email) .+/i,
+            ~r/get .+ (?:info|information) .+ and (?:send|email) .+/i
+          ]
+          
+          is_info_email = Enum.any?(info_email_patterns, fn pattern ->
+            Regex.match?(pattern, question_lower)
+          end)
+          
+          if is_info_email do
+            false  # Treat as simple action, not complex workflow
+          else
+            true   # Complex requests need workflows
+          end
+        else
+          # Check for action-based requests that require tools/workflows
+          action_patterns = [
+            ~r/^send (?:an? )?email to .+/i,
+            ~r/^email .+ about .+/i,
+            ~r/^schedule (?:a )?meeting with .+/i,
+            ~r/^create (?:a )?calendar event .+/i,
+            ~r/^add .+ to hubspot/i,
+            ~r/^send .+ (?:an? )?message/i,
+            ~r/^create .+ contact/i,
+            ~r/^update .+ in hubspot/i,
+            ~r/^cancel .+ meeting/i,
+            ~r/^reschedule .+/i,
+            ~r/^delete .+/i,
+            ~r/^archive .+/i
+          ]
+
+          is_action_request = Enum.any?(action_patterns, fn pattern ->
+            Regex.match?(pattern, question_lower)
+          end)
+
+          # Return true only for action requests, false for informational questions
+          is_action_request
+        end
       end
     end
   end
@@ -639,6 +665,20 @@ defmodule AiAgent.LLM.ToolCalling do
           }
         }}
 
+      %{message: message, steps_completed: steps_completed, final_result: final_result} ->
+        {:ok, %{
+          response: message,
+          tools_used: extract_tools_from_final_result(final_result),
+          context_used: Map.get(final_result, :context_used, []),
+          task: nil,
+          metadata: %{
+            workflow_completed: true,
+            is_new_workflow: is_new_workflow,
+            steps_completed: steps_completed,
+            final_result: final_result
+          }
+        }}
+
       %{message: message} ->
         {:ok, %{
           response: message,
@@ -652,15 +692,17 @@ defmodule AiAgent.LLM.ToolCalling do
         }}
 
       _ ->
+        Logger.warning("Workflow completed with unexpected result format: #{inspect(result)}")
         {:ok, %{
-          response: "Workflow completed successfully",
+          response: "Workflow processing completed. Check logs for detailed results.",
           tools_used: [],
           context_used: [],
           task: nil,
           metadata: %{
             workflow_completed: true,
             is_new_workflow: is_new_workflow,
-            raw_result: result
+            raw_result: result,
+            warning: "Unexpected result format"
           }
         }}
     end
@@ -715,4 +757,10 @@ defmodule AiAgent.LLM.ToolCalling do
     tools_used
   end
   defp extract_tools_from_details(_), do: []
+
+  defp extract_tools_from_final_result(final_result) when is_map(final_result) do
+    # Extract tools from the final workflow result
+    Map.get(final_result, :tools_used, [])
+  end
+  defp extract_tools_from_final_result(_), do: []
 end

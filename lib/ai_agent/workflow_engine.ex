@@ -255,16 +255,26 @@ defmodule AiAgent.WorkflowEngine do
 
     # Break down the complex request into steps
     breakdown_prompt = """
-    Break down this complex request into actionable steps:
+    Break down this complex request into specific, actionable steps that can be executed using available tools:
 
     Request: "#{request}"
 
-    Provide a step-by-step plan. If the request involves waiting for responses or conditional actions, indicate that clearly.
+    Available tools:
+    - Search documents/emails for information using semantic search
+    - Send emails to specific recipients
+    - Schedule calendar events
+    - Update CRM contacts and notes
+
+    Create specific steps that will accomplish the request. For search requests, be specific about what to search for. For email requests, specify the recipient and content type.
 
     Format your response as:
-    Step 1: [action]
-    Step 2: [action]
+    Step 1: [specific action with details]
+    Step 2: [specific action with details]
     etc.
+
+    Example for a search+email request:
+    Step 1: Search the document database for information about "Avenue Connections" including contact details, notes, and meeting records
+    Step 2: Send an email to willianschelles@gmail.com with the compiled Avenue Connections information found in the search
     """
 
     case ToolCalling.ask_with_tools(user, breakdown_prompt, %{enable_tools: false}) do
@@ -298,21 +308,35 @@ defmodule AiAgent.WorkflowEngine do
     # Execute the first step
     case List.first(steps) do
       nil ->
+        Logger.warning("No workflow steps generated for task #{task.id}")
         complete_workflow(task, user, opts)
 
       first_step ->
+        Logger.info("Starting workflow execution with #{length(steps)} steps")
         execute_single_workflow_step(task, user, first_step, steps, opts)
     end
   end
 
   defp execute_single_workflow_step(task, user, current_step, all_steps, opts) do
     step_description = current_step.description
+    
+    Logger.info("Executing workflow step #{current_step.step_number}: #{step_description}")
 
-    # Execute this step using the tool calling system
-    case ToolCalling.ask_with_tools(user, step_description) do
+    # Execute this step using the tool calling system with tools enabled but workflows disabled
+    # to prevent infinite recursion while still allowing tool execution
+    step_opts = %{
+      enable_tools: true,
+      enable_workflows: false,
+      context_limit: 5,
+      similarity_threshold: 0.3
+    }
+    
+    case ToolCalling.ask_with_tools(user, step_description, step_opts) do
       {:ok, result} ->
-        # Mark this step as completed
-        updated_steps = mark_step_completed(all_steps, current_step.step_number)
+        Logger.info("Step #{current_step.step_number} completed successfully. Tools used: #{length(Map.get(result, :tools_used, []))}")
+        
+        # Mark this step as completed and store the result
+        updated_steps = mark_step_completed(all_steps, current_step.step_number, result)
 
         # Check if we need to wait for external response
         if requires_waiting?(result) do
@@ -371,10 +395,15 @@ defmodule AiAgent.WorkflowEngine do
     end
   end
 
-  defp mark_step_completed(steps, step_number) do
+  defp mark_step_completed(steps, step_number, result \\ nil) do
     Enum.map(steps, fn step ->
       if step.step_number == step_number do
-        %{step | status: "completed"}
+        step = %{step | status: "completed"}
+        if result do
+          Map.put(step, :result, result)
+        else
+          step
+        end
       else
         step
       end

@@ -555,7 +555,7 @@ defmodule AiAgent.LLM.Tools.HubSpotTool do
     end
   end
 
-  defp get_property(contact, property_name) do
+  defp get_property(contact, property_name) when is_map(contact) do
     contact
     |> get_in(["properties", property_name, "value"])
     |> case do
@@ -563,6 +563,13 @@ defmodule AiAgent.LLM.Tools.HubSpotTool do
       value -> value
     end
   end
+
+  defp get_property(contact, _property_name) when is_binary(contact) do
+    # If contact is a string (like an email), return it for email property, empty for others
+    contact
+  end
+
+  defp get_property(_contact, _property_name), do: ""
 
   defp build_contact_url(contact_id) do
     "https://app.hubspot.com/contacts/#{contact_id}"
@@ -579,7 +586,7 @@ defmodule AiAgent.LLM.Tools.HubSpotTool do
     case get_access_token(user) do
       {:ok, access_token} ->
         test_token(access_token)
-        
+
       {:error, reason} ->
         {:error, reason}
     end
