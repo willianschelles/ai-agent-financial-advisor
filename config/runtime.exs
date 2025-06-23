@@ -51,18 +51,16 @@ if config_env() == :prod do
 
   # Additional socket options for Render's PostgreSQL
   socket_opts = maybe_ipv6 ++ [keepalive: true]
-
-  config :ai_agent, AiAgent.Repo,
-    ssl: use_ssl,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: socket_opts,
-    stacktrace: true,
-    show_sensitive_data_on_connection_error: true,
-    parameters: [
-      # Increase statement timeout for migrations
-      statement_timeout: 60_000
-    ]
+Ï    config :ai_agent, AiAgent.Repo,
+      ssl: use_ssl,
+      url: database_url,
+      pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+      socket_options: socket_opts,
+      stacktrace: true,
+      show_sensitive_data_on_connection_error: true,
+      parameters: [
+        statement_timeout: "60000"
+      ]
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
