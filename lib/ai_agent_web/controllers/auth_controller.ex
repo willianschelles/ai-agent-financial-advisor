@@ -50,9 +50,11 @@ defmodule AiAgentWeb.AuthController do
   end
 
   defp handle_hubspot_auth(conn, auth) do
+    Logger.info("=== HUBSPOT AUTH DEBUG START ===")
     Logger.info("Processing HubSpot OAuth callback")
     IO.inspect(auth.credentials, label: "Raw HubSpot credentials")
     IO.inspect(auth.credentials.token, label: "Raw token field")
+    IO.inspect(get_session(conn, :user_id), label: "Session user_id")
     
     # Parse the token if it's a JSON string, otherwise use as-is
     {access_token, token_type, refresh_token, expires_in} = 
@@ -103,8 +105,12 @@ defmodule AiAgentWeb.AuthController do
         Accounts.upsert_hubspot_tokens(user_id, tokens)
     end
 
+    IO.inspect(user_result, label: "Final user_result")
+    
     case user_result do
       {:ok, user} ->
+        Logger.info("✅ HubSpot OAuth SUCCESS - User #{user.id} tokens saved")
+        IO.inspect(user.hubspot_tokens, label: "Final user hubspot_tokens")
         redirect_path = determine_redirect_path(user, "hubspot")
         
         conn
@@ -114,7 +120,8 @@ defmodule AiAgentWeb.AuthController do
         |> redirect(to: redirect_path)
 
       {:error, reason} ->
-        Logger.error("HubSpot connection failed: #{reason}")
+        Logger.error("❌ HubSpot OAuth FAILED: #{reason}")
+        Logger.info("=== HUBSPOT AUTH DEBUG END ===")
         conn
         |> put_flash(:error, "HubSpot connection failed: #{reason}")
         |> redirect(to: "/login")

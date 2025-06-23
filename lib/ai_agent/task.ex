@@ -26,6 +26,7 @@ defmodule AiAgent.Task do
     email_workflow
     calendar_workflow
     hubspot_workflow
+    email_calendar_workflow
     multi_step_action
     scheduled_task
     recurring_task

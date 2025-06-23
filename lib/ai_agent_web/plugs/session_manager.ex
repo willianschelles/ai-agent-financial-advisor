@@ -62,12 +62,11 @@ defmodule AiAgentWeb.Plugs.SessionManager do
     # Check Google tokens
     google_valid = validate_google_tokens(user)
 
-    # Check HubSpot tokens
-    hubspot_valid = validate_hubspot_tokens(user)
+    # TEMPORARILY DISABLE HubSpot token validation to prevent overwriting
+    # hubspot_valid = validate_hubspot_tokens(user)
 
     IO.inspect(google_valid, label: "Google tokens valid")
-    IO.inspect(hubspot_valid, label: "HubSpot tokens valid")
-    IO.inspect(user.hubspot_tokens, label: "User HubSpot tokens")
+    IO.inspect(user.hubspot_tokens, label: "User HubSpot tokens (SessionManager)")
 
     cond do
       not google_valid ->
@@ -78,13 +77,14 @@ defmodule AiAgentWeb.Plugs.SessionManager do
         |> redirect(to: "/login")
         |> halt()
 
-      not hubspot_valid and not is_nil(user.hubspot_tokens) ->
-        Logger.warning("HubSpot tokens invalid for user #{user.id}")
-        # Don't force logout for HubSpot, just disconnect it
-        {:ok, updated_user} = Accounts.disconnect_hubspot(user)
-        conn
-        |> assign(:current_user, updated_user)
-        |> put_flash(:warning, "Your HubSpot connection has expired. Please reconnect in your dashboard.")
+      # COMMENTED OUT HubSpot validation to prevent token overwriting
+      # not hubspot_valid and not is_nil(user.hubspot_tokens) ->
+      #   Logger.warning("HubSpot tokens invalid for user #{user.id}")
+      #   # Don't force logout for HubSpot, just disconnect it
+      #   {:ok, updated_user} = Accounts.disconnect_hubspot(user)
+      #   conn
+      #   |> assign(:current_user, updated_user)
+      #   |> put_flash(:warning, "Your HubSpot connection has expired. Please reconnect in your dashboard.")
 
       true ->
         assign(conn, :current_user, user)
