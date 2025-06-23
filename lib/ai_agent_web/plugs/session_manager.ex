@@ -81,9 +81,9 @@ defmodule AiAgentWeb.Plugs.SessionManager do
       not hubspot_valid and not is_nil(user.hubspot_tokens) ->
         Logger.warning("HubSpot tokens invalid for user #{user.id}")
         # Don't force logout for HubSpot, just disconnect it
-        # {:ok, updated_user} = Accounts.disconnect_hubspot(user)
+        {:ok, updated_user} = Accounts.disconnect_hubspot(user)
         conn
-        |> assign(:current_user, user)
+        |> assign(:current_user, updated_user)
         |> put_flash(:warning, "Your HubSpot connection has expired. Please reconnect in your dashboard.")
 
       true ->
