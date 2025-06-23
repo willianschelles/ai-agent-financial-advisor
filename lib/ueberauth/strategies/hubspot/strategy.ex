@@ -56,8 +56,12 @@ defmodule HubspotAuth.HubspotStrategy do
       token_params = [code: code, redirect_uri: callback_url(conn), state: state]
 
       case apply(module, :get_token, [token_params]) do
-        {:ok, response} -> fetch_user(conn, response.token)
-        {:error, reason} -> set_errors!(conn, [error("token_fetch", reason)])
+        {:ok, response} ->
+          Logger.debug("Scopes in token: #{response.token.other_params["scope"]}")
+          fetch_user(conn, response.token)
+
+        {:error, reason} ->
+          set_errors!(conn, [error("token_fetch", reason)])
       end
     end
   end

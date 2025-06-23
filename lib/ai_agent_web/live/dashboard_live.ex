@@ -36,6 +36,23 @@ defmodule AiAgentWeb.DashboardLive do
     end
   end
 
+  def handle_event("refresh_data", _params, socket) do
+    user = socket.assigns.current_user
+    
+    # Trigger data refresh in background
+    Task.start(fn ->
+      case AiAgent.Embeddings.RAG.refresh_user_data(user, %{clear_existing: false}) do
+        {:ok, result} ->
+          send(self(), {:data_refresh_complete, result})
+        {:error, reason} ->
+          send(self(), {:data_refresh_error, reason})
+      end
+    end)
+    
+    socket = put_flash(socket, :info, "Data refresh started in background...")
+    {:noreply, socket}
+  end
+
   def handle_event("test_connection", %{"service" => service}, socket) do
     user = socket.assigns.current_user
     
@@ -82,5 +99,20 @@ defmodule AiAgentWeb.DashboardLive do
 
   defp test_service_connection(_user, _service) do
     {:error, "Unknown service"}
+  end
+
+  def handle_info({:data_refresh_complete, result}, socket) do
+    message = case result do
+      %{gmail: gmail_count, hubspot: hubspot_count} ->
+        "Data refresh complete! Processed #{gmail_count} Gmail messages and #{hubspot_count} HubSpot records."
+      _ ->
+        "Data refresh completed successfully."
+    end
+    
+    {:noreply, put_flash(socket, :info, message)}
+  end
+
+  def handle_info({:data_refresh_error, reason}, socket) do
+    {:noreply, put_flash(socket, :error, "Data refresh failed: #{reason}")}
   end
 end

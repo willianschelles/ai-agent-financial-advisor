@@ -22,6 +22,7 @@ defmodule AiAgentWeb.Router do
     get("/", PageController, :home)
     get("/login", LoginController, :index)
     delete("/logout", AuthController, :logout)
+    get("/setup/hubspot", SetupController, :hubspot)
   end
 
   scope "/", AiAgentWeb do
@@ -33,12 +34,14 @@ defmodule AiAgentWeb.Router do
   end
 
 
-  # /auth/google or /auth/hubspot
+  # /auth/google or /auth/hubspot (public routes)
   scope "/auth", AiAgentWeb do
     pipe_through(:browser)
 
     get("/google", AuthController, :request)
     get("/google/callback", AuthController, :callback)
+    get("/hubspot", AuthController, :request)
+    get("/hubspot/callback", AuthController, :callback)
   end
   # /auth/google or /auth/hubspot
   scope "/auth", AiAgentWeb do

@@ -32,6 +32,15 @@ defmodule AiAgentWeb.WebhookController do
         case SimpleWebhookHandler.handle_gmail_webhook(params, user_id) do
           {:ok, results} ->
             Logger.info("Gmail webhook processed successfully with SimpleWebhookHandler: #{length(results)} tasks resumed")
+            
+            # Trigger incremental data refresh for new emails
+            user = AiAgent.Accounts.get_user!(user_id)
+            Task.start(fn ->
+              AiAgent.Embeddings.RAG.refresh_user_data(user, %{
+                clear_existing: false,
+                gmail_opts: %{limit: 5} # Only recent messages
+              })
+            end)
 
             send_webhook_response(conn, :ok, %{
               status: "processed",

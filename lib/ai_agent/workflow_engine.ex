@@ -706,13 +706,62 @@ defmodule AiAgent.WorkflowEngine do
   end
 
   defp create_hubspot_contact(task, user, _opts) do
-    next_step = "add_notes"
-    update_workflow_and_continue(task, user, task.workflow_state, next_step)
+    Logger.info("Creating HubSpot contact for task #{task.id}")
+    
+    # Extract contact data from task request
+    contact_data = extract_contact_data_from_request(task.original_request)
+    
+    case AiAgent.LLM.Tools.HubSpotTool.execute(user, "hubspot_create_contact", contact_data) do
+      {:ok, result} ->
+        Logger.info("Successfully created HubSpot contact: #{result[:contact_id]}")
+        
+        # Update workflow state with contact info
+        updated_state = Map.put(task.workflow_state, "contact_created", result)
+        next_step = "add_notes"
+        update_workflow_and_continue(task, user, updated_state, next_step)
+        
+      {:error, reason} ->
+        Logger.error("Failed to create HubSpot contact: #{reason}")
+        TaskManager.update_task_status(task.id, "failed")
+        {:error, "Failed to create HubSpot contact: #{reason}"}
+    end
   end
 
   defp add_hubspot_notes(task, user, _opts) do
+    Logger.info("Adding notes to HubSpot contact for task #{task.id}")
+    
+    # Check if contact was created and if there are notes to add
+    contact_info = Map.get(task.workflow_state, "contact_created", %{})
+    contact_id = Map.get(contact_info, :contact_id)
+    
+    if contact_id do
+      # Extract any additional notes from the original request
+      notes = extract_notes_from_request(task.original_request)
+      
+      if notes && String.trim(notes) != "" do
+        note_data = %{
+          "contact_id" => to_string(contact_id),
+          "note_body" => notes,
+          "note_type" => "NOTE"
+        }
+        
+        case AiAgent.LLM.Tools.HubSpotTool.execute(user, "hubspot_add_note", note_data) do
+          {:ok, _result} ->
+            Logger.info("Successfully added note to HubSpot contact #{contact_id}")
+          {:error, reason} ->
+            Logger.warning("Failed to add note to HubSpot contact: #{reason}")
+        end
+      end
+    end
+    
     TaskManager.update_task_status(task.id, "completed")
     {:ok, %{message: "HubSpot workflow completed"}}
+  end
+  
+  defp extract_notes_from_request(request_text) do
+    # Extract any additional context or notes from the request
+    # For now, just return nil - could be enhanced to extract specific note content
+    nil
   end
 
   defp create_hubspot_deal(task, user, _opts) do
@@ -785,6 +834,47 @@ defmodule AiAgent.WorkflowEngine do
       {:error, reason} ->
         fail_task(task, reason)
     end
+  end
+
+  defp extract_contact_data_from_request(request_text) do
+    # Extract contact information from natural language request
+    # This is a simple parser - could be enhanced with NLP
+    
+    # Extract email using regex
+    email_regex = ~r/[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}/
+    email = case Regex.run(email_regex, request_text) do
+      [email] -> email
+      _ -> nil
+    end
+    
+    # Extract name - look for patterns like "create a contact for [Name]"
+    name_parts = extract_name_from_request(request_text)
+    
+    %{
+      "email" => email,
+      "first_name" => Map.get(name_parts, :first_name, ""),
+      "last_name" => Map.get(name_parts, :last_name, "")
+    }
+    |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
+    |> Enum.into(%{})
+  end
+  
+  defp extract_name_from_request(request_text) do
+    # Look for patterns like "create a contact for [First Last]"
+    name_patterns = [
+      ~r/create.*contact.*for\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)/i,
+      ~r/add.*contact.*([A-Z][a-z]+)\s+([A-Z][a-z]+)/i,
+      ~r/new.*contact.*([A-Z][a-z]+)\s+([A-Z][a-z]+)/i
+    ]
+    
+    Enum.reduce_while(name_patterns, %{}, fn pattern, _acc ->
+      case Regex.run(pattern, request_text) do
+        [_, first_name, last_name] ->
+          {:halt, %{first_name: first_name, last_name: last_name}}
+        _ ->
+          {:cont, %{}}
+      end
+    end)
   end
 
   defp break_down_composite_task(task, user) do
