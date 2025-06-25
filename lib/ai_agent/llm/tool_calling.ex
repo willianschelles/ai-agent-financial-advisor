@@ -679,6 +679,21 @@ defmodule AiAgent.LLM.ToolCalling do
           }
         }}
 
+      %{response: response} = result ->
+        # Handle results with response key (including needs_clarification, questions, etc.)
+        {:ok, %{
+          response: response,
+          tools_used: [],
+          context_used: [],
+          task: nil,
+          metadata: %{
+            workflow_completed: true,
+            is_new_workflow: is_new_workflow,
+            needs_clarification: Map.get(result, :needs_clarification, false),
+            questions: Map.get(result, :questions)
+          }
+        }}
+
       %{message: message} ->
         {:ok, %{
           response: message,

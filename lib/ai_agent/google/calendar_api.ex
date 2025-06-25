@@ -344,7 +344,7 @@ defmodule AiAgent.Google.CalendarAPI do
     # Generate 30-minute slots
     # minutes
     slot_interval = 30
-    slots_per_hour = 60 / slot_interval
+    slots_per_hour = div(60, slot_interval)
     total_slots = (end_hour - start_hour) * slots_per_hour
 
     0..(total_slots - 1)
@@ -354,7 +354,7 @@ defmodule AiAgent.Google.CalendarAPI do
       minute = rem(minutes_from_start, 60)
 
       # Create start and end times
-      start_time = DateTime.new!(date, Time.new!(hour, minute, 0), "America/New_York")
+      start_time = DateTime.new!(date, Time.new!(hour, minute, 0), "Etc/UTC")
       end_time = DateTime.add(start_time, duration_minutes, :minute)
 
       %{
