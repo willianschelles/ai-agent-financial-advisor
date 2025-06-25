@@ -147,44 +147,7 @@ defmodule AiAgent.LLM.Tools.HubSpotTool do
           }
         }
       },
-      %{
-        type: "function",
-        function: %{
-          name: "hubspot_create_deal",
-          description: "Create a new deal in HubSpot CRM",
-          parameters: %{
-            type: "object",
-            properties: %{
-              deal_name: %{
-                type: "string",
-                description: "Name of the deal"
-              },
-              amount: %{
-                type: "number",
-                description: "Deal amount in dollars"
-              },
-              deal_stage: %{
-                type: "string",
-                description:
-                  "Deal stage (e.g., 'appointmentscheduled', 'qualifiedtobuy', 'presentationscheduled')"
-              },
-              contact_email: %{
-                type: "string",
-                description: "Email of the contact to associate with this deal (optional)"
-              },
-              close_date: %{
-                type: "string",
-                description: "Expected close date in YYYY-MM-DD format (optional)"
-              },
-              description: %{
-                type: "string",
-                description: "Deal description or notes (optional)"
-              }
-            },
-            required: ["deal_name", "amount"]
-          }
-        }
-      }
+
     ]
   end
 

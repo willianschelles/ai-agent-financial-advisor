@@ -77,7 +77,7 @@ config :ueberauth, Ueberauth,
       Ueberauth.Strategy.Google,
       [
         default_scope:
-          "email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/pubsub https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://mail.google.com/ https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.insert"
+          "email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/pubsub https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://mail.google.com/ https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.insert https://www.googleapis.com/auth/calendar.events.freebusy"
       ]
     },
     hubspot: {

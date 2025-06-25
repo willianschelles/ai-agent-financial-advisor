@@ -1,6 +1,7 @@
 defmodule HubspotAuth.HubspotStrategy do
   use Ueberauth.Strategy,
-    default_scope: "oauth crm.objects.contacts.read crm.objects.contacts.write",
+    default_scope:
+      "oauth crm.objects.contacts.read crm.objects.contacts.write crm.dealsplits.read_write crm.lists.read crm.lists.write crm.objects.appointments.read crm.objects.appointments.write crm.objects.carts.read crm.objects.commercepayments.read crm.objects.commercepayments.write crm.objects.companies.write crm.objects.courses.read crm.objects.courses.write crm.objects.custom.read crm.objects.custom.write crm.objects.deals.read crm.objects.deals.write crm.objects.feedback_submissions.read crm.objects.goals.read crm.objects.goals.write crm.objects.leads.read crm.objects.leads.write crm.objects.line_items.read crm.objects.line_items.write crm.objects.listings.read crm.objects.listings.write crm.objects.products.read crm.objects.products.write crm.objects.services.read crm.objects.services.write crm.objects.users.read crm.objects.users.write",
     uid_field: :user_id,
     # Add this default
     oauth2_module: HubspotAuth.HubspotOAuth
